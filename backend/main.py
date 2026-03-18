@@ -12,7 +12,7 @@ from service import (
     get_all_indices, get_market_watch, get_sector_performance,
     get_deleted_holdings, restore_holding, get_index_history
 )
-from .scraper import run_psx_scraper
+from scraper import run_psx_scraper
 
 # --- Lifespan Manager ---
 @asynccontextmanager
