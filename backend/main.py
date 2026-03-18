@@ -36,6 +36,7 @@ app = FastAPI(title="PPM Backend", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[  
+        "https://ppm-personal-portfolio-manager-1qvuw5chg.vercel.app/"
         "https://ppm-personal-portfolio-manager-qsfto20jk.vercel.app", 
         "http://localhost:5173"
     ],  
