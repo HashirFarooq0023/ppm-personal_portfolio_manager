@@ -61,6 +61,11 @@ def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
         raise HTTPException(status_code=401, detail=f"Invalid Token: {str(e)}")
 
 # --- Endpoints ---
+@app.head("/")
+def health_check():
+    return None
+
+
 @app.get("/")
 def redirect_to_dashboard():
     # Redirecting to your Vercel frontend
