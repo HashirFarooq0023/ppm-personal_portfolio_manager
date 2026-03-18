@@ -5,6 +5,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from typing import List
+from fastapi.responses import RedirectResponse
 
 from models import PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem
 from service import (
@@ -60,6 +61,11 @@ def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
         raise HTTPException(status_code=401, detail=f"Invalid Token: {str(e)}")
 
 # --- Endpoints ---
+@app.get("/")
+def redirect_to_dashboard():
+    # Redirecting to your Vercel frontend
+    return RedirectResponse(url="https://ppm-personal-portfolio-manager-qsfto20jk.vercel.app/dashboard")
+
 
 @app.get("/api/portfolio", response_model=PortfolioSummary)
 async def get_portfolio(clerk_id: str = Depends(get_current_user)):
