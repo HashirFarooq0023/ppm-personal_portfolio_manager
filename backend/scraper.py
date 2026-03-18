@@ -1,8 +1,8 @@
 import asyncio
 import httpx
 from datetime import datetime
-from .service import upsert_market_indices, upsert_market_watch, db
-from .models import MarketIndex, MarketWatch
+from service import upsert_market_indices, upsert_market_watch, db
+from models import MarketIndex, MarketWatch
 
 PSX_INDICES_URL = "https://dps.psx.com.pk/indices" # Mocking for now, will use timeseries for real values
 PSX_STOCK_URL = "https://dps.psx.com.pk/timeseries/int/"
