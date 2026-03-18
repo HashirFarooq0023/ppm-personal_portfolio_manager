@@ -34,7 +34,10 @@ app = FastAPI(title="PPM Backend", lifespan=lifespan)
 # --- CORS Setup ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace "*" with your Vercel frontend URL
+    allow_origins=[  
+        "https://ppm-personal-portfolio-manager-qsfto20jk.vercel.app", 
+        "http://localhost:5173"
+    ],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
