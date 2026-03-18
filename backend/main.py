@@ -117,4 +117,6 @@ async def get_history(symbol: str, limit: int = 100):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Grab the port Render assigns, or default to 8080 locally
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
