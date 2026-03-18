@@ -1,0 +1,36 @@
+# Personal Portfolio Manager - Frontend Architecture
+
+Directory: /frontend (React + Vite + TypeScript)
+
+## Project Structure (src/)
+
+### 1. App.tsx & main.tsx
+- App.tsx: Core routing (React Router) and layout wrapper.
+- main.tsx: Entry point, initializes QueryClient and ClerkProvider.
+
+### 2. pages/
+The main view components of the application.
+- Dashboard.tsx: real-time overview of indices and performance.
+- Portfolio.tsx: Detailed breakdown of user holdings.
+- Sectors.tsx: Performance data categorized by industry.
+- AuthPage.tsx: Login/Signup flows using Clerk UI components.
+
+### 3. components/
+Modular UI elements.
+- charts/: High-performance visualization (using Shadcn/Recharts).
+- AppLayout.tsx: The sidebar and main navigation shell.
+- IndexCard.tsx: Individual index summaries (KSE-100, etc.)
+
+### 4. data/
+Local data management.
+- mockData.ts: Simulated data for testing and API fallbacks.
+
+### 5. hooks/
+Custom React hooks.
+- useTheme.ts: Handles dark/light mode and theme detection.
+
+### 6. Configuration
+- vite.config.ts: Build settings and API proxy to backend.
+- tailwind.config.ts: Design system tokens and glassmorphism utilities.
+- index.css: Premium "Crystal Glass" theme and global styles.
+- components.json: Shadcn UI component registration.

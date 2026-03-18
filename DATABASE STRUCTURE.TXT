@@ -1,0 +1,38 @@
+# Personal Portfolio Manager - Database Structure (MongoDB)
+
+Database Name: ppm
+
+## Collections
+
+### 1. market_indices
+Stores real-time values for market indices like KSE-100 and KSE-30.
+- `symbol`: string (e.g., "KSE100")
+- `value`: float (current index points)
+- `change`: float (absolute change)
+- `change_percent`: float (percentage change)
+- `last_updated`: datetime
+
+### 2. market_watch
+Stores live stock prices scraped from PSX.
+- `symbol`: string (Unique stock ticker, e.g., "MEBL")
+- `current_price`: float (last traded price)
+- `sector`: string (Category, e.g., "Technology")
+- `last_updated`: datetime
+
+### 3. portfolio
+Stores user-specific stock holdings and transaction history.
+- `clerk_id`: string (Identifies the user from authentication)
+- `symbol`: string (Stock ticker)
+- `shares`: int (Number of shares owned)
+- `average_buy_price`: float (Cost basis)
+- `transactions`: array of objects (Transaction Ledger)
+    - `date`: datetime
+    - `action`: string ("Buy" or "Sell")
+    - `shares`: int
+    - `price`: float
+
+### 4. users
+Basic user meta-data (synchronized with Clerk).
+- `clerk_id`: string
+- `email`: string
+- `joined_at`: datetime

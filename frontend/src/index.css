@@ -1,0 +1,266 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+@layer base {
+  :root {
+    --background: 215 15% 97%;
+    --foreground: 215 15% 25%;
+
+    --card: 0 0% 100% / 0.45;
+    --card-foreground: 215 15% 20%;
+
+    --popover: 0 0% 100% / 0.6;
+    --popover-foreground: 215 15% 20%;
+
+    --primary: 152 38% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 10% 92%;
+    --secondary-foreground: 215 15% 35%;
+
+    --muted: 215 10% 92%;
+    --muted-foreground: 215 10% 55%;
+
+    --accent: 215 10% 94%;
+    --accent-foreground: 215 15% 35%;
+
+    --destructive: 0 50% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 10% 88%;
+    --input: 215 10% 90%;
+    --ring: 152 38% 40%;
+
+    --radius: 0.75rem;
+
+    --surface: 0 0% 100% / 0.3;
+    --surface-hover: 0 0% 100% / 0.5;
+    --psx-green: 152 38% 40%;
+    --psx-red: 0 45% 58%;
+    --text-primary: 215 15% 20%;
+    --text-secondary: 215 10% 55%;
+    --text-muted: 215 10% 70%;
+    --border-subtle: 215 10% 90%;
+
+    --glass-bg: 0 0% 100% / 0.35;
+    --glass-border: 0 0% 100% / 0.4;
+    --glass-blur: 24px;
+
+    --sidebar-background: 0 0% 100% / 0.25;
+    --sidebar-foreground: 215 15% 35%;
+    --sidebar-primary: 152 38% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 10% 94%;
+    --sidebar-accent-foreground: 215 15% 35%;
+    --sidebar-border: 215 10% 88%;
+    --sidebar-ring: 152 38% 40%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    /* #09090b - Deep Zinc */
+    --foreground: 0 0% 98%;
+    /* #FAFAFA - Pure White */
+
+    --card: 0 0% 100% / 0.03;
+    /* Glass Panel Background */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 3.9% / 0.8;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 161 94% 30%;
+    /* #059669 - Action Primary */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    /* #A1A1AA - Soft Silver */
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    /* #EF4444 - Rose Red */
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 100% / 0.08;
+    /* #FAFAFA08 - Glass Border */
+    --input: 240 3.7% 15.9%;
+    --ring: 161 94% 30%;
+
+    --surface: 0 0% 100% / 0.03;
+    --surface-hover: 0 0% 100% / 0.06;
+
+    --psx-green: 158 64% 52%;
+    /* #10B981 - Emerald Green */
+    --psx-red: 0 84.2% 60.2%;
+    /* #EF4444 - Rose Red */
+
+    --text-primary: 0 0% 98%;
+    /* #FAFAFA */
+    --text-secondary: 240 5% 64.9%;
+    /* #A1A1AA */
+    --text-muted: 240 3.8% 46.1%;
+
+    --glass-bg: 0 0% 100% / 0.03;
+    --glass-border: 0 0% 100% / 0.08;
+    --glass-blur: 12px;
+
+    --sidebar-background: 240 10% 2% / 0.8;
+    --sidebar-foreground: 240 5% 64.9%;
+    --sidebar-primary: 161 94% 30%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 100% / 0.08;
+    --sidebar-ring: 161 94% 30%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100vh;
+  }
+
+  .bg-diagonal-pattern {
+    background-image: 
+      repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.05) 0px,
+        rgba(255, 255, 255, 0.05) 1.5px,
+        transparent 1.5px,
+        transparent 35px
+      ),
+      radial-gradient(ellipse at 20% 50%, hsl(var(--primary) / 0.1) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, hsl(var(--primary) / 0.08) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .font-mono-tabular {
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-psx-green {
+    color: hsl(var(--psx-green));
+  }
+
+  .text-psx-red {
+    color: hsl(var(--psx-red));
+  }
+
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  .glass-strong {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  .bg-surface {
+    background: hsl(var(--surface));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+
+  .bg-surface-hover {
+    background: hsl(var(--surface-hover));
+  }
+
+  .panel-shadow {
+    box-shadow: 0 4px 24px -4px hsl(0 0% 0% / 0.08), 0 0 0 1px hsl(var(--glass-border));
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 2px;
+  }
+
+  @keyframes price-flash-green {
+    0% {
+      color: hsl(var(--psx-green));
+    }
+
+    100% {
+      color: hsl(var(--text-primary));
+    }
+  }
+
+  @keyframes price-flash-red {
+    0% {
+      color: hsl(var(--psx-red));
+    }
+
+    100% {
+      color: hsl(var(--text-primary));
+    }
+  }
+
+  .flash-green {
+    animation: price-flash-green 0.6s ease-out;
+  }
+
+  .flash-red {
+    animation: price-flash-red 0.6s ease-out;
+  }
+}
+
+@layer base {
+
+  /* Hide spin buttons for Chrome, Safari, and Edge */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+  }
+
+  /* Hide spin buttons for Firefox */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 120s linear infinite;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}

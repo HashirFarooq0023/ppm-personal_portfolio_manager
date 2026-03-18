@@ -1,0 +1,40 @@
+# Personal Portfolio Manager - Backend Architecture
+
+Directory: /backend (FastAPI + Python 3.x)
+
+## Core Files
+
+### 1. main.py
+The entry point of the FastAPI application.
+- Defines API endpoints for Portfolio management and Market data.
+- Handles Clerk JWT authentication.
+- Orchestrates the background scraper startup.
+
+### 2. models.py
+Data validation layer using Pydantic.
+- Includes schemas for Users, PortfolioItems, and MarketOverview responses.
+- Ensures consistent data structure across the API.
+
+### 3. scraper.py
+Background service for real-time data ingestion.
+- Connects to PSX (dps.psx.com.pk) to fetch intraday prices.
+- Automatically updates MongoDB collections every 60 seconds.
+
+### 4. requirements.txt
+List of Python dependencies.
+- FastAPI, Uvicorn (Web Server)
+- Motor (Async MongoDB Driver)
+- Python-Jose (JWT handling)
+- Httpx (Async HTTP Client)
+
+### 5. .env
+Environment secrets and configuration.
+- MongoDB URI (Atlas connection)
+- Clerk Secret & Publishable Keys
+- Server Port and Host settings
+
+### 6. seed.py
+Utility script to populate the database with initial market symbols and indices.
+
+### 7. service.py
+Helper functions and modular business logic for database interactions.

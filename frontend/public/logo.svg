@@ -1,0 +1,5 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="8" fill="#10B981"/>
+  <text x="50%" y="65%" dominant-baseline="middle" text-anchor="middle" fill="white" font-family="monospace" font-weight="bold" font-size="14">PPM</text>
+  <path d="M4 24L10 18L16 22L28 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+</svg>

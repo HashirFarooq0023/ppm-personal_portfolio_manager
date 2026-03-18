@@ -1,0 +1,17 @@
+{
+  "name": "ppsm-monorepo",
+  "version": "1.0.0",
+  "description": "Personal Portfolio Manager - Monorepo",
+  "main": "index.js",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload",
+    "dev": "concurrently --names \"FRONTEND,BACKEND\" --prefix-colors \"cyan,green\" \"npm run dev:frontend\" \"npm run dev:backend\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
