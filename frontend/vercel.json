@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://<YOUR-RENDER-APP-NAME>.onrender.com/api/:path*"
+      "destination": "https://ppm-personal-portfolio-manager-backend.onrender.com/api/:path*"
     }
   ]
 }
