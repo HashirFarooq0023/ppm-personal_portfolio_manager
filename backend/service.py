@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import List, Optional
 from dotenv import load_dotenv
-from .models import (
+from models import (
     PortfolioItem, PortfolioResponseItem, PortfolioSummary, 
     MarketIndex, MarketWatch, User, Transaction, SectorPerformance
 )
