@@ -65,6 +65,9 @@ def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
 def health_check():
     return None
 
+@app.get("/api/ping")
+async def ping():
+    return {"status": "awake", "message": "Backend is active!"}
 
 @app.get("/")
 def redirect_to_dashboard():
