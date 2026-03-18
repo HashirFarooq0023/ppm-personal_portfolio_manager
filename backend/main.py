@@ -6,8 +6,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import List
 
-from .models import PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem
-from .service import (
+from models import PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem
+from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
     get_all_indices, get_market_watch, get_sector_performance,
     get_deleted_holdings, restore_holding, get_index_history
