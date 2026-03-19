@@ -81,7 +81,7 @@ async def ping():
 @app.get("/")
 def redirect_to_dashboard():
     # Redirecting to your Vercel frontend
-    return RedirectResponse(url=https://ppm-personal-portfolio-manager.vercel.app/dashboard)
+    return RedirectResponse(url="https://ppm-personal-portfolio-manager.vercel.app/dashboard")
 
 
 @app.get("/api/portfolio", response_model=PortfolioSummary)
