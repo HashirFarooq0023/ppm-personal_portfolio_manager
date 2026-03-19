@@ -1,40 +1,75 @@
 # Personal Portfolio Manager - Backend Architecture
 
 Directory: /backend (FastAPI + Python 3.x)
+Deployment: Render (via render.yaml)
 
 ## Core Files
 
 ### 1. main.py
 The entry point of the FastAPI application.
-- Defines API endpoints for Portfolio management and Market data.
-- Handles Clerk JWT authentication.
-- Orchestrates the background scraper startup.
+- Defines all REST API endpoints for Portfolio and Market data.
+- Handles Clerk JWT authentication via HTTPBearer.
+- Reads allowed CORS origins from CORS_ORIGINS env var (comma-separated).
+- Orchestrates the background scraper on startup via lifespan manager.
+- Redirects root (/) to the Vercel frontend dashboard.
 
 ### 2. models.py
 Data validation layer using Pydantic.
-- Includes schemas for Users, PortfolioItems, and MarketOverview responses.
-- Ensures consistent data structure across the API.
+- APIModel base with camelCase alias generation for JSON responses.
+- User, Transaction, PortfolioItem, PortfolioAddRequest, PortfolioResponseItem, PortfolioSummary.
+- MarketWatch, MarketIndex, MarketOverview, SectorPerformance.
 
-### 3. scraper.py
-Background service for real-time data ingestion.
-- Connects to PSX (dps.psx.com.pk) to fetch intraday prices.
-- Automatically updates MongoDB collections every 60 seconds.
+### 3. service.py
+Business logic and all MongoDB database interactions.
+- get_user_portfolio(): Returns live P&L for all active holdings.
+- add_or_update_holding(): Buy/Sell with weighted average cost calculation.
+- delete_holding(): Soft-delete (moves to bin, sets is_deleted=True).
+- get_deleted_holdings(): Returns bin items with live P&L.
+- restore_holding(): Restores a symbol from the bin.
+- get_all_indices(), get_market_watch(): Fetch cached market data.
+- get_index_history(): Returns de-duplicated time-series from market_history.
+- get_sector_performance(): Aggregates stock data into sector metrics.
+- upsert_market_indices(), upsert_market_watch(): Write scraped data to DB.
 
-### 4. requirements.txt
-List of Python dependencies.
-- FastAPI, Uvicorn (Web Server)
-- Motor (Async MongoDB Driver)
-- Python-Jose (JWT handling)
-- Httpx (Async HTTP Client)
+### 4. scraper.py
+Background async task for real-time data ingestion (10-second interval).
+- Connects to PSX (dps.psx.com.pk/timeseries/int/) for intraday prices.
+- Tracks ~40 stocks across 7 sectors: Banks, Technology, Fertilizer,
+  Oil & Gas, Cement, Power, Chemicals.
+- Writes index snapshots to market_history collection for charting.
+- Updates market_indices and market_watch collections each cycle.
 
-### 5. .env
-Environment secrets and configuration.
-- MongoDB URI (Atlas connection)
-- Clerk Secret & Publishable Keys
-- Server Port and Host settings
+### 5. requirements.txt
+Python dependencies:
+- fastapi, uvicorn[standard] — Web framework and ASGI server.
+- motor — Async MongoDB driver.
+- python-jose[cryptography] — Clerk JWT decoding.
+- httpx — Async HTTP client (for PSX scraping).
+- pydantic, pydantic-settings, python-dotenv, python-multipart.
 
-### 6. seed.py
-Utility script to populate the database with initial market symbols and indices.
+### 6. .env  (git-ignored, never commit)
+Runtime secrets loaded by service.py and main.py.
+- MONGODB_URI, DB_NAME
+- CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY
+- PORT, HOST
+- CORS_ORIGINS (comma-separated list for local dev)
 
-### 7. service.py
-Helper functions and modular business logic for database interactions.
+### 7. .env.example  (safe to commit)
+Template documenting all required environment variables.
+Copy to .env and fill in real values.
+
+### 8. render.yaml
+Render deployment manifest.
+- buildCommand: pip install -r requirements.txt
+- startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+- Documents env vars required in the Render dashboard.
+
+### 9. seed.py
+One-time utility script to populate the DB with initial market symbols.
+
+## Local Dev
+
+Run from project root:
+  python run_backend.py
+Or via npm:
+  npm run dev:backend

@@ -5,8 +5,13 @@ from typing import List, Optional
 from dotenv import load_dotenv
 from models import (
     PortfolioItem, PortfolioResponseItem, PortfolioSummary, 
-    MarketIndex, MarketWatch, User, Transaction, SectorPerformance
+    MarketIndex, MarketWatch, User, Transaction, SectorPerformance,
+    AIAnalysisRequest, AIAnalysisResponse
 )
+from fastapi import HTTPException
+import json
+from openai import AsyncOpenAI
+from ddgs import DDGS
 
 # Load .env from the same directory as this file
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -94,7 +99,7 @@ async def upsert_market_watch(stocks: List[MarketWatch]):
 # --- Portfolio Services ---
 
 async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
-    cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": {"$ne": True}})
+    cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": {"$in": [False, None]}})
     items = await cursor.to_list(length=100)
     
     response_items = []
@@ -218,3 +223,149 @@ async def restore_holding(clerk_id: str, symbol: str):
         {"clerk_id": clerk_id, "symbol": symbol, "is_deleted": True},
         {"$set": {"is_deleted": False, "deleted_at": None}}
     )
+
+# --- AI Analyst Service ---
+
+async def generate_stock_analysis(clerk_id: str, symbol: Optional[str], question: Optional[str] = None, history: Optional[List[dict]] = None) -> dict:
+    
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY environment variable is missing.")
+
+    openai_client = AsyncOpenAI(api_key=api_key)
+
+    # ---- MODE 2: GENERAL CHAT (no symbol selected) ----
+    if not symbol:
+        # Fetch portfolio so the AI knows what the user owns
+        portfolio = await get_user_portfolio(clerk_id)
+        portfolio_summary = ""
+        if portfolio.items:
+            now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            portfolio_summary = f"**User's Current Portfolio (AS OF {now_str} UTC):**\n"
+            for item in portfolio.items:
+                ownership_word = "profit" if item.profit_loss_percent >= 0 else "loss"
+                portfolio_summary += (
+                    f"- {item.symbol}: {item.shares} shares @ PKR {item.average_buy_price:.2f} "
+                    f"(Current: PKR {item.current_price:.2f}, {abs(item.profit_loss_percent):.1f}% {ownership_word})\n"
+                )
+            portfolio_summary += (
+                f"\nTotal Portfolio Value: PKR {portfolio.total_value:,.0f} | "
+                f"Total P&L: PKR {portfolio.total_profit_loss:,.0f} ({portfolio.total_profit_loss_percent:.1f}%)"
+            )
+        else:
+            portfolio_summary = "The user has no stocks in their current active portfolio."
+
+        system_prompt = f"""You are an elite Financial Analyst and seasoned Stock Broker for the Pakistan Stock Exchange (PSX).
+You have decades of experience navigating the KSE-100. Be direct, confident, and street-smart.
+
+**IMPORTANT PORTFOLIO RULE:**
+{portfolio_summary}
+The list above is the ONLY source of truth for the user's current holdings. If a stock is NOT on this list, they do NOT own it anymore (it may have been sold or moved to the bin). IGNORE any conflicting information about their holdings from the previous chat history below.
+
+CRITICAL RULE: Match the length and energy of the user's message.
+- If they say "hi" or "hello", reply with a short, friendly 1-2 sentence greeting. Do NOT dump a market report.
+- If they ask a simple question, give a concise answer (3-5 sentences max).
+- Only give detailed analysis with bullet points when they explicitly ask for it.
+- ALWAYS pivot general knowledge questions (e.g., "What is Islamabad?") back to the PSX. Briefly answer the question, then immediately highlight top PSX companies or sectors related to that topic where they can invest in shares.
+
+{portfolio_summary}
+
+Respond conversationally and accurately. You have full access to the user's portfolio data above — use it when they ask about their holdings. Format using **bold text** and bullet points only when the depth of the question warrants it. Do NOT return JSON."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+            
+        user_msg = question if question else "Give me your outlook on the current PSX market conditions."
+        messages.append({"role": "user", "content": user_msg})
+
+        try:
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages
+            )
+            return {"response_text": response.choices[0].message.content}
+        except Exception as e:
+            print(f"OpenAI API error: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate AI analysis.")
+
+    # ---- MODE 1: SPECIFIC STOCK ANALYSIS ----
+    symbol = symbol.upper()
+    
+    # 1. Symbol Validation via Market Watch
+    market_data = await db.market_watch.find_one({"symbol": symbol})
+    if not market_data:
+        raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found in PSX market watch.")
+    
+    live_price = market_data.get('current_price', 0.0)
+    
+    # 2. Portfolio Context Injection
+    portfolio = await get_user_portfolio(clerk_id)
+    user_context = "The user does not currently own this stock. Advise on whether it is a good entry point."
+    
+    for item in portfolio.items:
+        if item.symbol == symbol:
+            ownership_word = "profit" if item.profit_loss_percent >= 0 else "loss"
+            user_context = (
+                f"The user currently owns {item.shares} shares of {symbol} "
+                f"at an average buy price of PKR {item.average_buy_price:.2f}. "
+                f"They are currently at a {abs(item.profit_loss_percent):.2f}% {ownership_word}. "
+                f"Tailor your advice to help them decide whether to hold, average down, or cut losses."
+            )
+            break
+            
+    # 3. Live News via DuckDuckGo
+    news_context = ""
+    try:
+        search_query = f"{symbol} stock news Pakistan PSX"
+        results = DDGS().text(search_query, max_results=3)
+        if results:
+            for i, r in enumerate(results):
+                news_context += f"Source {i+1}: {r.get('title', '')} - {r.get('href', '')}\nSnippet: {r.get('body', '')}\n\n"
+        else:
+            news_context = "No recent specific news found."
+    except Exception as e:
+        print(f"DuckDuckGo Search error: {e}")
+        news_context = "Could not retrieve live news."
+        
+    # 4. Antigravity Prompt Construction
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    system_prompt = f"""You are an elite Financial Analyst and seasoned Stock Broker for the Pakistan Stock Exchange (PSX).
+You have decades of experience navigating the KSE-100 and a reputation for being savvy and street-smart.
+
+**CURRENT PORTFOLIO STATE (AS OF {now_str} UTC):**
+{user_context}
+(Note: Only rely on this "CURRENT PORTFOLIO STATE". If history contradicts this, ignore history as it is stale information.)
+
+**MARKET DATA FOR {symbol}:**
+- Live Price: PKR {live_price}
+- Live News & Sentiment:
+{news_context}
+
+**Instructions:**
+Respond directly to the user in a conversational, professional tone.
+Incorporate the following elements naturally into your text:
+1. A clear **Verdict** (BUY, HOLD, or SELL) — make it bold.
+2. A **Risk Score** from 1-10.
+3. Market trend and running projects based on the news.
+4. Reference links at the bottom (only real URLs from the news context).
+
+Format your response using **bolding**, bullet points, and clean paragraphs. Do NOT return JSON."""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+        
+    user_msg = question if question else f"Give me your full analysis on {symbol}."
+    messages.append({"role": "user", "content": user_msg})
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        return {"response_text": response.choices[0].message.content}
+        
+    except Exception as e:
+        print(f"OpenAI API error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate AI analysis.")

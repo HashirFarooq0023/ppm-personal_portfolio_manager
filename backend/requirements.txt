@@ -7,3 +7,5 @@ pydantic-settings
 python-dotenv
 python-jose[cryptography]
 python-multipart
+openai
+ddgs

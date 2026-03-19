@@ -86,5 +86,18 @@ class MarketIndex(APIModel):
 class MarketOverview(APIModel):
     indices: List[MarketIndex]
     stocks: List[MarketWatch]
-    sectors: List[SectorPerformance] = []
     status: str = "Open"
+
+# --- AI Analyst Feature Models ---
+class AIAnalysisRequest(APIModel):
+    symbol: Optional[str] = None
+    question: Optional[str] = None
+    history: Optional[List[dict]] = None  # [{role: "user"/"assistant", content: "..."}]
+
+class AIAnalysisResponse(APIModel):
+    verdict: str  # "BUY", "HOLD", "SELL"
+    reasoning_personalized: str
+    trend: str    # "Bullish", "Bearish", "Neutral"
+    projects: List[str]
+    links: List[str]
+    risk_score: int # 1-10

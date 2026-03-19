@@ -1,6 +1,7 @@
 import { Search, Sun, Moon } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
+import { AIAnalystSheet } from './TopNavbar/AIAnalystSheet';
 
 export default function TopNavbar() {
   const { theme, toggle } = useTheme();
@@ -47,6 +48,13 @@ export default function TopNavbar() {
         <span className="text-label text-muted-foreground font-mono-tabular hidden sm:inline">
           {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} PKT
         </span>
+        
+        <SignedIn>
+          <div className="mr-2">
+            <AIAnalystSheet />
+          </div>
+        </SignedIn>
+
         <button
           onClick={toggle}
           className="w-8 h-8 rounded-lg glass flex items-center justify-center hover:bg-surface-hover transition-colors"

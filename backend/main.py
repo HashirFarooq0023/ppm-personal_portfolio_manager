@@ -7,11 +7,15 @@ from contextlib import asynccontextmanager
 from typing import List
 from fastapi.responses import RedirectResponse
 
-from models import PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem
+from models import (
+    PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem,
+    AIAnalysisRequest, AIAnalysisResponse
+)
 from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
     get_all_indices, get_market_watch, get_sector_performance,
-    get_deleted_holdings, restore_holding, get_index_history
+    get_deleted_holdings, restore_holding, get_index_history,
+    generate_stock_analysis
 )
 from scraper import run_psx_scraper
 
@@ -33,13 +37,17 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(title="PPM Backend", lifespan=lifespan)
 
 # --- CORS Setup ---
+# Read origins from env var (comma-separated), with safe local defaults.
+# On Render: set CORS_ORIGINS to your Vercel URL(s) in the dashboard.
+_raw_origins = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://localhost:8080"
+)
+ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[  
-        "https://ppm-personal-portfolio-manager-1qvuw5chg.vercel.app/"
-        "https://ppm-personal-portfolio-manager-qsfto20jk.vercel.app", 
-        "http://localhost:5173"
-    ],  
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -132,6 +140,12 @@ async def get_overview():
 async def get_history(symbol: str, limit: int = 100):
     """Public: Returns historical data points for a symbol (index or stock)."""
     return await get_index_history(symbol, limit)
+
+@app.post("/api/ai/analyze")
+async def analyze_stock(request: AIAnalysisRequest, clerk_id: str = Depends(get_current_user)):
+    """Protected: Generates an AI analysis report (markdown text response)."""
+    analysis = await generate_stock_analysis(clerk_id, request.symbol, request.question, request.history)
+    return analysis
 
 if __name__ == "__main__":
     import uvicorn

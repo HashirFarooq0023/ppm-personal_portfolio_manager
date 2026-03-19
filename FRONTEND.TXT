@@ -1,36 +1,113 @@
 # Personal Portfolio Manager - Frontend Architecture
 
 Directory: /frontend (React + Vite + TypeScript)
+Deployment: Vercel (via frontend/vercel.json)
 
-## Project Structure (src/)
+## Routing & Entry
 
-### 1. App.tsx & main.tsx
-- App.tsx: Core routing (React Router) and layout wrapper.
-- main.tsx: Entry point, initializes QueryClient and ClerkProvider.
+### main.tsx
+App entry point. Wraps the app in:
+- ClerkProvider (auth, reads VITE_CLERK_PUBLISHABLE_KEY)
+- QueryClientProvider (TanStack Query)
+- BrowserRouter
 
-### 2. pages/
-The main view components of the application.
-- Dashboard.tsx: real-time overview of indices and performance.
-- Portfolio.tsx: Detailed breakdown of user holdings.
-- Sectors.tsx: Performance data categorized by industry.
-- AuthPage.tsx: Login/Signup flows using Clerk UI components.
+### App.tsx
+Defines all client-side routes (React Router v6):
+- / → LandingPage (public)
+- /sign-in, /sign-up → AuthPage (Clerk UI)
+- /dashboard, /portfolio, /sectors, /chart → Protected (wrapped in AppLayout)
+- * → NotFound
 
-### 3. components/
-Modular UI elements.
-- charts/: High-performance visualization (using Shadcn/Recharts).
-- AppLayout.tsx: The sidebar and main navigation shell.
-- IndexCard.tsx: Individual index summaries (KSE-100, etc.)
+## Pages (src/pages/)
 
-### 4. data/
-Local data management.
-- mockData.ts: Simulated data for testing and API fallbacks.
+### LandingPage.tsx
+Public marketing/hero page with animated AI-Mesh background,
+premium glassmorphism cards, and sign-in CTA.
 
-### 5. hooks/
-Custom React hooks.
-- useTheme.ts: Handles dark/light mode and theme detection.
+### AuthPage.tsx
+Unified login/signup page using Clerk's SignIn/SignUp components.
+Features animated background (moving grid, data streams, neural pulse).
 
-### 6. Configuration
-- vite.config.ts: Build settings and API proxy to backend.
-- tailwind.config.ts: Design system tokens and glassmorphism utilities.
-- index.css: Premium "Crystal Glass" theme and global styles.
-- components.json: Shadcn UI component registration.
+### Dashboard.tsx
+Main authenticated home. Shows:
+- KSE-100 CandlestickChart with time-range selector (1D/1W/1M/3M/1Y).
+- Portfolio summary cards (total value, P&L, cost basis).
+- Live market index cards (KSE100, KSE30).
+- Top movers table from market watch.
+
+### Portfolio.tsx
+Detailed holdings management:
+- Active holdings table with live P&L per stock.
+- Add/Sell form with symbol autocomplete from market watch.
+- Transaction history modal per holding.
+- Bin (soft-deleted) management with restore action.
+
+### Sectors.tsx
+Sector breakdown page:
+- Aggregated sector performance cards (fetched from /api/market/overview).
+- Per-sector stock tables with live prices.
+
+### ChartTerminal.tsx
+Full-screen chart view for any market symbol.
+Uses CandlestickChart with selectable time ranges.
+
+### NotFound.tsx
+404 fallback page.
+
+## Components (src/components/)
+
+### AppLayout.tsx
+Shell wrapper: renders LeftSidebar + main content area.
+
+### LeftSidebar.tsx
+Navigation sidebar with icon links (Dashboard, Portfolio, Sectors, Chart).
+
+### TopNavbar.tsx
+Top bar with page title, user avatar, and Clerk UserButton.
+
+### NavLink.tsx
+Styled navigation link with active-state highlighting.
+
+### charts/CandlestickChart.tsx
+Lightweight-charts candlestick widget. Accepts historical data points
+and renders OHLC candles with crosshair. Used in Dashboard & ChartTerminal.
+
+### charts/LineChartWidget.tsx
+Lightweight-charts line widget. Used for simpler trend overlays.
+
+### Market/StockDetailView.tsx
+Expandable detail panel for a single stock: price, change, volume,
+52-week high/low, and a mini chart.
+
+### ui/
+Shadcn UI primitives (Button, Card, Dialog, Table, Badge, etc.)
+
+## Data & Utilities (src/)
+
+### data/mockData.ts
+Static fallback data used when API is unavailable or during dev.
+
+### hooks/useTheme.ts
+Custom hook for dark/light mode detection and toggle.
+
+### lib/utils.ts
+Shadcn utility helpers (cn() class merger, formatters).
+
+## Configuration
+
+| File | Purpose |
+|---|---|
+| vite.config.ts | Build config; proxies /api/ → localhost:8000 in dev |
+| vercel.json | Rewrites /api/* → Render backend; handles SPA routing |
+| tailwind.config.ts | Design tokens, glassmorphism utilities |
+| index.css | Global Crystal Glass theme, CSS variables, animations |
+| components.json | Shadcn component registry config |
+| .env | VITE_CLERK_PUBLISHABLE_KEY (git-ignored) |
+| .env.example | Template for required frontend env vars (safe to commit) |
+
+## API Communication
+
+All API calls use relative paths (e.g. fetch('/api/portfolio')):
+- In dev: Vite proxies to http://localhost:8000
+- On Vercel: vercel.json rewrites to the Render backend URL
+No environment-specific code needed in the frontend.

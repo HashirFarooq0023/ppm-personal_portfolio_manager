@@ -1,38 +1,85 @@
-# Personal Portfolio Manager - Database Structure (MongoDB)
+# Personal Portfolio Manager - Database Structure (MongoDB Atlas)
 
 Database Name: ppm
+Driver: Motor (async)
+Connection: MONGODB_URI env var (Atlas connection string)
 
 ## Collections
 
 ### 1. market_indices
-Stores real-time values for market indices like KSE-100 and KSE-30.
-- `symbol`: string (e.g., "KSE100")
-- `value`: float (current index points)
-- `change`: float (absolute change)
-- `change_percent`: float (percentage change)
-- `last_updated`: datetime
+Live index values scraped every 10 seconds from PSX.
+One document per index symbol (upserted on each scrape cycle).
 
-### 2. market_watch
-Stores live stock prices scraped from PSX.
-- `symbol`: string (Unique stock ticker, e.g., "MEBL")
-- `current_price`: float (last traded price)
-- `sector`: string (Category, e.g., "Technology")
-- `last_updated`: datetime
+Fields:
+- symbol         : string  — Index ticker (e.g. "KSE100", "KSE30")
+- value          : float   — Current index points
+- change         : float   — Absolute change from previous close
+- change_percent : float   — Percentage change
+- last_updated   : datetime
 
-### 3. portfolio
-Stores user-specific stock holdings and transaction history.
-- `clerk_id`: string (Identifies the user from authentication)
-- `symbol`: string (Stock ticker)
-- `shares`: int (Number of shares owned)
-- `average_buy_price`: float (Cost basis)
-- `transactions`: array of objects (Transaction Ledger)
-    - `date`: datetime
-    - `action`: string ("Buy" or "Sell")
-    - `shares`: int
-    - `price`: float
+### 2. market_history
+Time-series snapshots of index values for chart rendering.
+One document inserted per index per scrape cycle (grows over time).
 
-### 4. users
-Basic user meta-data (synchronized with Clerk).
-- `clerk_id`: string
-- `email`: string
-- `joined_at`: datetime
+Fields:
+- symbol : string   — Index ticker (e.g. "KSE100")
+- value  : float    — Index value at this timestamp
+- time   : datetime — UTC timestamp of the snapshot
+
+Usage: queried by /api/market/history/{symbol}, sorted descending,
+de-duplicated by second to produce a clean chart time-series.
+
+### 3. market_watch
+Live stock prices for ~40 tracked symbols across 7 sectors.
+One document per stock symbol (upserted on each scrape cycle).
+
+Fields:
+- symbol         : string   — Stock ticker (e.g. "MEBL", "OGDC")
+- current_price  : float    — Last traded price (PKR)
+- change_percent : float    — % change vs previous tick
+- volume         : float    — Latest tick volume
+- high           : float    — Session high (from intraday ticks)
+- low            : float    — Session low (from intraday ticks)
+- sector         : string   — Sector label (e.g. "Commercial Banks")
+- last_updated   : datetime
+
+Sectors tracked:
+  Commercial Banks | Technology | Fertilizer |
+  Oil & Gas        | Cement     | Power       | Chemicals
+
+### 4. portfolio
+User-specific stock holdings. Supports soft-delete (bin) functionality.
+One document per (clerk_id, symbol) pair.
+
+Fields:
+- clerk_id           : string   — Clerk user ID (from JWT sub)
+- symbol             : string   — Stock ticker
+- shares             : int      — Current shares owned
+- average_buy_price  : float    — Weighted average cost basis
+- is_deleted         : bool     — true = in bin, false = active
+- deleted_at         : datetime | null — Set when soft-deleted
+- transactions       : array    — Full transaction ledger
+    Each transaction:
+    - date   : datetime
+    - action : string  ("Buy" or "Sell")
+    - shares : int
+    - price  : float
+
+Business Rules:
+- Buy: new_avg = (old_shares * old_avg + new_shares * price) / total_shares
+- Sell: average_buy_price unchanged; shares decremented.
+- Delete: sets is_deleted=True + deleted_at timestamp (soft delete).
+- Restore: clears is_deleted and deleted_at.
+
+### 5. users
+Basic user metadata. Synchronized with Clerk on sign-up.
+
+Fields:
+- clerk_id  : string   — Clerk user ID
+- email     : string
+- joined_at : datetime
+
+## Indexes (Recommended)
+- portfolio: { clerk_id: 1, symbol: 1 }  (unique per user-stock pair)
+- market_watch: { symbol: 1 }             (unique)
+- market_history: { symbol: 1, time: -1 } (range queries for charts)
