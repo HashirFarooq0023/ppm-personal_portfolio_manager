@@ -1,11 +1,60 @@
 import { useState } from 'react';
 import { sectorPerformance as mockSectors, sectorCompanies as mockCompanies, formatPKR, formatNumber } from '@/data/mockData';
-import { ArrowLeft, Search, Loader2 } from 'lucide-react';
+import { 
+  ArrowLeft, Search, Loader2, ChevronRight, 
+  Landmark, Flame, Droplets, Leaf, 
+  Building2, Monitor, Shirt, Zap, 
+  Pill, Beaker, Settings, Car, 
+  ShieldCheck, Utensils, Candy, Box, 
+  FileText, Wallet, Coins, Handshake, 
+  Home, Truck, MoreHorizontal, Cpu
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import StockDetailView from '@/components/Market/StockDetailView';
 import { useAuth } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
+
+const SECTOR_ICONS: Record<string, any> = {
+  "COMMERCIAL BANKS": Landmark,
+  "OIL & GAS EXPLORATION COMPANIES": Flame,
+  "OIL & GAS MARKETING COMPANIES": Droplets,
+  "FERTILIZER": Leaf,
+  "CEMENT": Building2,
+  "TECHNOLOGY & COMMUNICATION": Monitor,
+  "TEXTILE COMPOSITE": Shirt,
+  "POWER GENERATION & DISTRIBUTION": Zap,
+  "PHARMACEUTICALS": Pill,
+  "CHEMICAL": Beaker,
+  "ENGINEERING": Settings,
+  "AUTOMOBILE ASSEMBLER": Car,
+  "INSURANCE": ShieldCheck,
+  "FOOD & PERSONAL CARE PRODUCTS": Utensils,
+  "SUGAR & ALLIED INDUSTRIES": Candy,
+  "GLASS & CERAMICS": Box,
+  "PAPER & BOARD": FileText,
+  "INVESTMENT BANKS / INVESTMENT COMPANIES / SECURITIES COMPANIES": Wallet,
+  "LEASING COMPANIES": Coins,
+  "MODARABAS": Handshake,
+  "REAL ESTATE INVESTMENT TRUST": Home,
+  "TRANSPORT": Truck,
+  "INV. BANKS / INV. COS. / SECURITIES COS.": Wallet,
+  "MISCELLANEOUS": MoreHorizontal,
+  "REFINERY": Droplets,
+  "CABLE & ELECTRICAL GOODS": Cpu,
+  "AUTOMOBILE PARTS & ACCESSORIES": Settings,
+  "SYNTHETIC & RAYON": Shirt,
+  "TEXTILE SPINNING": Shirt,
+  "TEXTILE WEAVING": Shirt,
+};
+
+const getSectorIcon = (name: string) => {
+  const upper = name.toUpperCase();
+  for (const key in SECTOR_ICONS) {
+    if (upper.includes(key) || key.includes(upper)) return SECTOR_ICONS[key];
+  }
+  return MoreHorizontal;
+};
 
 export default function Sectors() {
   const { getToken } = useAuth();
@@ -73,34 +122,56 @@ export default function Sectors() {
         <p className="text-label text-muted-foreground">Market capitalization distribution and daily performance by sector.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
         {sectors.map((sector: any) => {
           const pct = (sector.value / max) * 100;
           const positive = sector.change >= 0;
+          const Icon = getSectorIcon(sector.name);
           return (
             <motion.button
               key={sector.name}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setSelectedSector(sector.name)}
-              className="glass rounded-xl p-4 relative overflow-hidden text-left w-full"
+              className="glass rounded-xl p-5 relative overflow-hidden text-left w-full group transition-all duration-300 hover:border-psx-green/30"
             >
               {/* Background bar */}
               <div
-                className="absolute inset-y-0 left-0 opacity-10 rounded-xl"
+                className="absolute inset-y-0 left-0 opacity-[0.05] rounded-xl transition-all duration-500 group-hover:opacity-[0.12]"
                 style={{
                   width: `${pct}%`,
                   backgroundColor: positive ? 'hsl(var(--psx-green))' : 'hsl(var(--psx-red))',
                 }}
               />
-              <div className="relative">
-                <div className="flex items-center justify-between">
-                  <span className="text-body font-semibold">{sector.name}</span>
-                  <span className={`font-mono-tabular text-body font-medium ${positive ? 'text-psx-green' : 'text-psx-red'}`}>
-                    {positive ? '+' : ''}{sector.change.toFixed(2)}%
-                  </span>
+
+              {/* Shine effect on hover */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+
+              <div className="relative flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:rotate-12 ${
+                  positive ? 'bg-psx-green/10 text-psx-green shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-psx-red/10 text-psx-red shadow-[0_0_15px_rgba(239,68,68,0.1)]'
+                }`}>
+                  <Icon className="w-6 h-6" strokeWidth={1.5} />
                 </div>
-                <div className="text-label text-muted-foreground mt-1">{sector.value.toFixed(2)}% of total market cap</div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-body font-bold truncate group-hover:text-primary transition-colors">{sector.name}</span>
+                    <span className={`font-mono-tabular text-body font-bold whitespace-nowrap ${positive ? 'text-psx-green' : 'text-psx-red'}`}>
+                      {positive ? '▲' : '▼'} {Math.abs(sector.change).toFixed(2)}%
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-1.5">
+                    <div className="text-label text-muted-foreground font-medium">
+                      {sector.value.toFixed(1)}% Market Cap
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-primary/40 group-hover:text-primary transition-all font-bold uppercase tracking-widest">
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity">View Details</span>
+                      <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.button>
           );
@@ -158,11 +229,16 @@ function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: s
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               transition={{ delay: i * 0.03 }}
               onClick={() => onSelectStock(company.symbol)}
-              className="glass rounded-xl p-4 w-full text-left transition-colors hover:bg-white/5"
+              className="glass rounded-xl p-4 w-full text-left transition-all duration-300 hover:bg-white/5 group relative overflow-hidden active:bg-white/10"
             >
-              <div className="flex items-center justify-between">
+              {/* Shine effect on hover */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              
+              <div className="relative flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-body font-semibold">{company.symbol}</span>
@@ -179,13 +255,16 @@ function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: s
                     <span>L: {(company.low ?? 0).toFixed(2)}</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-mono-tabular text-body font-medium">
-                    {formatPKR(company.currentPrice ?? company.price ?? 0)}
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="font-mono-tabular text-body font-medium">
+                      {formatPKR(company.currentPrice ?? company.price ?? 0)}
+                    </div>
+                    <span className={`font-mono-tabular text-label ${(company.changePercent ?? 0) >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
+                      {(company.changePercent ?? 0) >= 0 ? '+' : ''}{(company.changePercent ?? 0).toFixed(2)}%
+                    </span>
                   </div>
-                  <span className={`font-mono-tabular text-label ${(company.changePercent ?? 0) >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
-                    {(company.changePercent ?? 0) >= 0 ? '+' : ''}{(company.changePercent ?? 0).toFixed(2)}%
-                  </span>
+                  <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary transition-all group-hover:translate-x-1" />
                 </div>
               </div>
             </motion.button>

@@ -4,7 +4,10 @@ from typing import List, Optional
 
 def to_camel(string: str) -> str:
     parts = string.split('_')
-    return parts[0] + ''.join(word.capitalize() for word in parts[1:])
+    if not parts:
+        return ""
+    first, *others = parts
+    return first + "".join(word.capitalize() for word in others)
 
 class APIModel(BaseModel):
     class Config:
@@ -39,6 +42,7 @@ class PortfolioAddRequest(APIModel):
     action: str # "Buy" or "Sell"
     shares: int
     price: float
+    reset_history: Optional[bool] = False
 
 class PortfolioResponseItem(APIModel):
     symbol: str

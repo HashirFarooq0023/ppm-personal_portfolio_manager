@@ -142,7 +142,7 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         total_profit_loss_percent=total_pl_pct
     )
 
-async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float):
+async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float, reset_history: bool = False):
     existing = await db.portfolio.find_one({"clerk_id": clerk_id, "symbol": symbol})
     
     new_txn = Transaction(
@@ -152,22 +152,49 @@ async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares:
     )
 
     if existing:
-        if action == "Buy":
-            new_shares = existing['shares'] + shares
-            # Weighted Average Cost Calculation
-            new_avg_price = ((existing['shares'] * existing['average_buy_price']) + (shares * price)) / new_shares
-        else: # Sell
-            new_shares = max(0, existing['shares'] - shares)
-            # Average buy price doesn't change on sell (it's the cost of remaining shares)
-            new_avg_price = existing['average_buy_price']
+        is_binned = existing.get('is_deleted', False)
         
-        await db.portfolio.update_one(
-            {"_id": existing["_id"]},
-            {
-                "$set": {"shares": new_shares, "average_buy_price": new_avg_price},
-                "$push": {"transactions": new_txn.model_dump()}
+        if is_binned and reset_history:
+            # Wipe history and start fresh
+            new_shares = shares if action == "Buy" else 0
+            new_avg_price = price
+            await db.portfolio.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "shares": new_shares, 
+                        "average_buy_price": new_avg_price,
+                        "is_deleted": False,
+                        "deleted_at": None,
+                        "transactions": [new_txn.model_dump()]
+                    }
+                }
+            )
+        else:
+            # Normal update (or restore without reset)
+            if action == "Buy":
+                new_shares = existing['shares'] + shares
+                # Weighted Average Cost Calculation
+                new_avg_price = ((existing['shares'] * existing['average_buy_price']) + (shares * price)) / new_shares
+            else: # Sell
+                new_shares = max(0, existing['shares'] - shares)
+                # Average buy price doesn't change on sell (it's the cost of remaining shares)
+                new_avg_price = existing['average_buy_price']
+            
+            update_data = {
+                "shares": new_shares, 
+                "average_buy_price": new_avg_price,
+                "is_deleted": False, # Ensure restored if it was binned
+                "deleted_at": None
             }
-        )
+            
+            await db.portfolio.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": update_data,
+                    "$push": {"transactions": new_txn.model_dump()}
+                }
+            )
     else:
         # If selling something not owned, we'll ignore for now or start at 0
         start_shares = shares if action == "Buy" else 0
@@ -179,6 +206,10 @@ async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares:
             transactions=[new_txn]
         )
         await db.portfolio.insert_one(new_holding.model_dump())
+
+async def empty_bin_items(clerk_id: str):
+    """Permanently deletes all binned holdings for a user."""
+    await db.portfolio.delete_many({"clerk_id": clerk_id, "is_deleted": True})
 
 async def delete_holding(clerk_id: str, symbol: str):
     """Soft deletes a holding by moving it to the bin."""

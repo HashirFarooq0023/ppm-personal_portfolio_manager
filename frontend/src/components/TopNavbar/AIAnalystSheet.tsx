@@ -161,10 +161,10 @@ export const AIAnalystSheet = () => {
         <SheetTrigger asChild>
           <Button
             variant="outline"
-            className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all font-medium"
+            className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all font-medium px-2.5 sm:px-4"
           >
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI Recommendation
+            <Sparkles className="w-4 h-4 sm:mr-2" />
+            <span className="hidden sm:inline">AI Recommendation</span>
           </Button>
         </SheetTrigger>
 

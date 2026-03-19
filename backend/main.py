@@ -15,7 +15,7 @@ from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
     get_all_indices, get_market_watch, get_sector_performance,
     get_deleted_holdings, restore_holding, get_index_history,
-    generate_stock_analysis
+    generate_stock_analysis, empty_bin_items
 )
 from scraper import run_psx_scraper
 
@@ -97,7 +97,8 @@ async def add_portfolio(request: PortfolioAddRequest, clerk_id: str = Depends(ge
         symbol=request.symbol,
         action=request.action,
         shares=request.shares,
-        price=request.price
+        price=request.price,
+        reset_history=request.reset_history
     )
     return {"status": "success", "message": f"Updated {request.symbol} in portfolio."}
 
@@ -117,6 +118,12 @@ async def restore(symbol: str, clerk_id: str = Depends(get_current_user)):
     """Protected: Restores a stock from the bin."""
     await restore_holding(clerk_id, symbol.upper())
     return {"status": "success", "message": f"Restored {symbol} to portfolio"}
+
+@app.delete("/api/portfolio/bin/all")
+async def clear_bin(clerk_id: str = Depends(get_current_user)):
+    """Protected: Permanently deletes all items in the bin."""
+    await empty_bin_items(clerk_id)
+    return {"status": "success", "message": "Bin cleared permanently"}
 
 @app.get("/api/market/indices", response_model=List[MarketIndex])
 async def get_indices():

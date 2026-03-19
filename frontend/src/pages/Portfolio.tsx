@@ -104,6 +104,25 @@ export default function Portfolio() {
     }
   });
 
+  // Empty Bin Mutation
+  const emptyBinMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      const res = await fetch('/api/portfolio/bin/all', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to clear bin');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio', 'bin'] });
+      setShowEmptyBinConfirm(false);
+    }
+  });
+
+  const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
+
   const selectedHolding = holdings.find((h: any) => h.symbol === selectedSymbol);
 
   return (
@@ -155,10 +174,20 @@ export default function Portfolio() {
           {/* Bin Section (Recently Deleted) */}
           {binItems.length > 0 && (
             <div className="mt-12 pt-8 border-t border-border/50">
-              <div className="flex items-center gap-2 mb-4 text-muted-foreground">
-                <History className="w-4 h-4" />
-                <h2 className="text-subheader font-semibold">Recently Deleted</h2>
-                <span className="text-label px-2 py-0.5 rounded-full bg-muted">{binItems.length}</span>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <History className="w-4 h-4" />
+                  <h2 className="text-subheader font-semibold">Recently Deleted</h2>
+                  <span className="text-label px-2 py-0.5 rounded-full bg-muted">{binItems.length}</span>
+                </div>
+                
+                <button
+                  onClick={() => setShowEmptyBinConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-psx-red hover:bg-destructive/10 transition-colors text-label font-medium"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Empty Bin
+                </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 opacity-70 grayscale-[0.5] hover:grayscale-0 transition-all">
@@ -192,6 +221,7 @@ export default function Portfolio() {
             onAdd={(trade) => addTradeMutation.mutate(trade)}
             isPending={addTradeMutation.isPending}
             currentHoldings={holdings}
+            binItems={binItems}
           />
         )}
         {deleteSymbol && (
@@ -200,6 +230,13 @@ export default function Portfolio() {
             onClose={() => setDeleteSymbol(null)}
             onConfirm={() => deleteMutation.mutate(deleteSymbol)}
             isPending={deleteMutation.isPending}
+          />
+        )}
+        {showEmptyBinConfirm && (
+          <EmptyBinConfirmModal
+            onClose={() => setShowEmptyBinConfirm(false)}
+            onConfirm={() => emptyBinMutation.mutate()}
+            isPending={emptyBinMutation.isPending}
           />
         )}
       </AnimatePresence>
@@ -266,14 +303,25 @@ function PortfolioTile({ holding, onClick, onDelete }: { holding: any; onClick: 
 }
 
 
-function AddTradeModal({ onClose, onAdd, isPending, currentHoldings }: { onClose: () => void; onAdd: (trade: any) => void, isPending: boolean, currentHoldings: any[] }) {
+function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = [] }: { onClose: () => void; onAdd: (trade: any) => void, isPending: boolean, currentHoldings: any[], binItems?: any[] }) {
   const { getToken } = useAuth();
   const [symbol, setSymbol] = useState('');
   const [action, setAction] = useState('Buy');
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
+  const [resetHistory, setResetHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Check if current symbol is in bin
+  const isBinned = useMemo(() => {
+    return binItems.some((item: any) => item.symbol === symbol.toUpperCase());
+  }, [symbol, binItems]);
+
+  // Reset flag if symbol changes and is NOT binned anymore
+  useEffect(() => {
+    if (!isBinned) setResetHistory(false);
+  }, [isBinned]);
 
   const suggestions = useMemo(() => {
     if (!symbol) return TOP_PSX_SYMBOLS.slice(0, 50);
@@ -335,7 +383,13 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings }: { onClose
       }
     }
 
-    onAdd({ symbol: upperSymbol, action, shares: parsedShares, price: parsedPrice });
+    onAdd({ 
+      symbol: upperSymbol, 
+      action, 
+      shares: parsedShares, 
+      price: parsedPrice,
+      reset_history: resetHistory 
+    });
   };
 
   return (
@@ -462,6 +516,30 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings }: { onClose
               />
             </div>
           </div>
+
+          {isBinned && action === 'Buy' && (
+            <div className="p-3 bg-psx-green/10 border border-psx-green/20 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-body font-medium text-psx-green">Previously Binned</div>
+                  <div className="text-[10px] text-muted-foreground italic">Would you like to reset history for {symbol.toUpperCase()}?</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setResetHistory(!resetHistory)}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${resetHistory ? 'bg-psx-green' : 'bg-muted'}`}
+                >
+                  <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${resetHistory ? 'left-6' : 'left-1'}`} />
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                {resetHistory 
+                  ? "Old transactions will be deleted. Starting fresh with this trade." 
+                  : "Previous transactions will be restored and this trade added to them."}
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isPending}
@@ -522,6 +600,52 @@ function DeleteConfirmModal({ symbol, onClose, onConfirm, isPending }: { symbol:
           >
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {timer > 0 ? `Confirm in ${timer}s` : 'Yes, Delete Asset'}
+          </button>
+
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-full py-2 rounded-lg font-medium text-foreground bg-surface hover:bg-surface-hover transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function EmptyBinConfirmModal({ onClose, onConfirm, isPending }: { onClose: () => void; onConfirm: () => void; isPending: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 20 }}
+        className="glass-strong border border-destructive/30 rounded-xl w-full max-w-sm p-6 text-center"
+      >
+        <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
+          <Trash2 className="w-6 h-6 text-psx-red" />
+        </div>
+
+        <h2 className="text-subheader font-bold mb-2">Empty Bin?</h2>
+        <p className="text-body text-muted-foreground mb-6">
+          This will permanently delete all stocks in your "Recently Deleted" section. This action cannot be undone.
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="w-full py-2 rounded-lg font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-lg shadow-destructive/20 transition-all flex items-center justify-center gap-2"
+          >
+            {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            Clear Everything
           </button>
 
           <button
