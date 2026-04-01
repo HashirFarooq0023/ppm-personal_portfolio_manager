@@ -1,10 +1,12 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import UpdateOne, IndexModel, ASCENDING, DESCENDING
 import os
 from datetime import datetime
 from typing import List, Optional
+from uuid import uuid4
 from dotenv import load_dotenv
 from models import (
-    PortfolioItem, PortfolioResponseItem, PortfolioSummary, 
+    PortfolioItem, PortfolioResponseItem, PortfolioSummary, PortfolioHistoryPoint,
     MarketIndex, MarketWatch, User, Transaction, SectorPerformance,
     AIAnalysisRequest, AIAnalysisResponse
 )
@@ -21,8 +23,45 @@ load_dotenv(env_path)
 MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME", "ppm")
 
-client = AsyncIOMotorClient(MONGODB_URI)
+# Connection Pool Management:
+# maxPoolSize=10 limits the number of connections to Atlas Free Tier (M0)
+# waitQueueTimeoutMS=5000 prevents long hangs
+client = AsyncIOMotorClient(
+    MONGODB_URI, 
+    maxPoolSize=10, 
+    minPoolSize=1, 
+    waitQueueTimeoutMS=5000,
+    serverSelectionTimeoutMS=5000
+)
 db = client[DB_NAME]
+
+async def ensure_indexes():
+    """Defines and creates indexes to prevent full scans on Atlas Free Tier."""
+    print("[BACKEND] Checking Database Indexes...")
+    try:
+        # 1. Market History: Critical for charts. Compound index for (symbol, time)
+        history_indexes = [
+            IndexModel([("symbol", ASCENDING), ("time", DESCENDING)], name="history_symbol_time_idx")
+        ]
+        await db.market_history.create_indexes(history_indexes)
+        
+        # 2. Market Watch: Critical for landing page and sector performance
+        watch_indexes = [
+            IndexModel([("symbol", ASCENDING)], name="watch_symbol_idx"),
+            IndexModel([("sector", ASCENDING)], name="watch_sector_idx")
+        ]
+        await db.market_watch.create_indexes(watch_indexes)
+        
+        # 3. Portfolio: Critical for user-specific loading
+        portfolio_indexes = [
+            IndexModel([("clerk_id", ASCENDING)], name="portfolio_user_idx"),
+            IndexModel([("symbol", ASCENDING)], name="portfolio_symbol_idx")
+        ]
+        await db.portfolio.create_indexes(portfolio_indexes)
+        
+        print("=> SUCCESS: All database indexes verified/created.")
+    except Exception as e:
+        print(f"=> ERROR creating indexes: {e}")
 
 # --- Market Services ---
 
@@ -32,8 +71,10 @@ async def get_all_indices() -> List[MarketIndex]:
     return [MarketIndex(**i) for i in indices]
 
 async def get_market_watch() -> List[MarketWatch]:
-    cursor = db.market_watch.find().limit(100)
-    stocks = await cursor.to_list(length=100)
+    # Remove the .limit(100) from the query
+    cursor = db.market_watch.find() 
+    # Increase the length to 1000 so it captures the whole PSX market
+    stocks = await cursor.to_list(length=1000) 
     return [MarketWatch(**s) for s in stocks]
 
 async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
@@ -51,50 +92,125 @@ async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
         {"time": ts, "value": val} 
         for ts, val in sorted(temp_map.items())
     ]
-
-async def get_sector_performance() -> List[SectorPerformance]:
-    """Aggregates individual stock data into sector performance metrics."""
-    cursor = db.market_watch.find()
-    all_stocks = await cursor.to_list(length=200)
+async def get_sector_performance() -> list[SectorPerformance]:
+    """Aggregates individual stock data into sector performance metrics using MongoDB."""
     
-    sectors_map = {} # name -> {total_change: float, count: int}
-    
-    for s in all_stocks:
-        name = s.get('sector', 'Other')
-        change = s.get('change_percent', 0.0)
+    # 1. Get the total number of stocks so we can calculate the percentage share
+    total_stocks = await db.market_watch.count_documents({})
+    if total_stocks == 0:
+        return []
         
-        if name not in sectors_map:
-            sectors_map[name] = {"total_change": 0.0, "count": 0}
-        
-        sectors_map[name]["total_change"] += change
-        sectors_map[name]["count"] += 1
+    # 2. Let MongoDB do the math! (Much faster than a Python loop)
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$sector",
+                "avg_change_snake": {"$avg": "$change_percent"},
+                "avg_change_camel": {"$avg": "$changePercent"},
+                "count": {"$sum": 1}
+            }
+        }
+    ]
     
-    total_stocks = len(all_stocks) if all_stocks else 1
     result = []
-    for name, data in sectors_map.items():
-        avg_change = data["total_change"] / data["count"] if data["count"] > 0 else 0.0
-        share = (data["count"] / total_stocks) * 100
-        result.append(SectorPerformance(name=name, change=avg_change, value=share))
+    async for doc in db.market_watch.aggregate(pipeline):
+        name = doc.get("_id")
+        
+        # Skip empty or unclassified sectors
+        if not name or name == "Miscellaneous" or name == "Other":
+            continue 
+            
+        avg_change = doc.get("avg_change_snake") or doc.get("avg_change_camel") or 0.0
+        count = doc.get("count", 0)
+        
+        # Calculate what percentage of the market this sector takes up
+        share = (count / total_stocks) * 100
+        
+        result.append(SectorPerformance(
+            name=name,
+            change=avg_change,
+            value=share
+        ))
     
-    # Sort by performance (descending)
-    result.sort(key=lambda x: x.change, reverse=True)
+    # Sort the final result array by market value (share) high to low.
+    result.sort(key=lambda x: x.value, reverse=True)
+    
+    print(f"[BACKEND] Sector Aggregation Complete: Found {len(result)} valid sectors.")
     return result
 
 async def upsert_market_indices(indices: List[MarketIndex]):
-    for index in indices:
-        await db.market_indices.update_one(
-            {"symbol": index.symbol},
-            {"$set": index.model_dump()},
-            upsert=True
-        )
+    if not indices:
+        return
+    operations = [
+        UpdateOne({"symbol": index.symbol}, {"$set": index.model_dump()}, upsert=True)
+        for index in indices
+    ]
+    await db.market_indices.bulk_write(operations)
 
 async def upsert_market_watch(stocks: List[MarketWatch]):
-    for stock in stocks:
-        await db.market_watch.update_one(
-            {"symbol": stock.symbol},
-            {"$set": stock.model_dump()},
-            upsert=True
-        )
+    if not stocks:
+        return
+    operations = [
+        UpdateOne({"symbol": stock.symbol}, {"$set": stock.model_dump()}, upsert=True)
+        for stock in stocks
+    ]
+    await db.market_watch.bulk_write(operations)
+
+async def record_market_snapshot():
+    """Captures a full historical snapshot of indices and all stocks."""
+    print("[BACKEND] Recording Market History Snapshot...")
+    now = datetime.utcnow()
+    
+    # 1. Snapshot Indices
+    indices = await db.market_indices.find().to_list(length=10)
+    for idx in indices:
+        await db.market_history.insert_one({
+            "symbol": idx["symbol"],
+            "value": idx["value"],
+            "time": now
+        })
+        
+    # 2. Snapshot All Stocks (to enable individual company charting)
+    stocks = await db.market_watch.find().to_list(length=1000)
+    history_points = []
+    for s in stocks:
+        history_points.append({
+            "symbol": s["symbol"],
+            "value": s["current_price"],
+            "time": now
+        })
+    
+    if history_points:
+        await db.market_history.insert_many(history_points)
+        print(f"=> INFO: Recorded {len(history_points)} stock and {len(indices)} index points to history.")
+
+async def record_all_portfolios_snapshot():
+    """Iterates through all users and records their total portfolio metrics."""
+    print("[BACKEND] Recording All Portfolio Snapshots...")
+    # 1. Get all unique users who have at least one holding
+    clerk_ids = await db.portfolio.distinct("clerk_id")
+    
+    now = datetime.utcnow()
+    snapshots_taken = 0
+    
+    for cid in clerk_ids:
+        try:
+            summary = await get_user_portfolio(cid)
+            if summary.total_value > 0 or summary.total_cost > 0:
+                history_point = PortfolioHistoryPoint(
+                    clerk_id=cid,
+                    total_value=summary.total_value,
+                    total_cost=summary.total_cost,
+                    total_profit_loss=summary.total_profit_loss,
+                    total_profit_loss_percent=summary.total_profit_loss_percent,
+                    timestamp=now
+                )
+                await db.portfolio_history.insert_one(history_point.model_dump())
+                snapshots_taken += 1
+        except Exception as e:
+            print(f"Error recording snapshot for user {cid}: {e}")
+            
+    print(f"=> INFO: Successfully archived {snapshots_taken} user portfolio snapshots.")
 
 # --- Portfolio Services ---
 
@@ -119,6 +235,25 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         total_cost += cost
         total_value += value
         
+        # Backfill `transaction_id` for older rows so the UI can delete individual transactions.
+        raw_transactions = item.get("transactions", []) or []
+        txns_changed = False
+        normalized_transactions = []
+        for t in raw_transactions:
+            if t.get("transaction_id"):
+                normalized_transactions.append(t)
+                continue
+            # Create a new id only when missing.
+            t["transaction_id"] = str(uuid4())
+            txns_changed = True
+            normalized_transactions.append(t)
+
+        if txns_changed:
+            await db.portfolio.update_one(
+                {"_id": item["_id"]},
+                {"$set": {"transactions": normalized_transactions}},
+            )
+
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
             shares=item['shares'],
@@ -128,7 +263,7 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
             total_value=value,
             profit_loss=pl,
             profit_loss_percent=pl_pct,
-            transactions=[Transaction(**t) for t in item.get('transactions', [])]
+            transactions=[Transaction(**t) for t in normalized_transactions]
         ))
     
     total_pl = total_value - total_cost
@@ -145,7 +280,9 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
 async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float, reset_history: bool = False):
     existing = await db.portfolio.find_one({"clerk_id": clerk_id, "symbol": symbol})
     
+    txn_id = str(uuid4())
     new_txn = Transaction(
+        transaction_id=txn_id,
         action=action,
         shares=shares,
         price=price
@@ -207,6 +344,72 @@ async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares:
         )
         await db.portfolio.insert_one(new_holding.model_dump())
 
+def _recompute_holding_from_transactions(transactions: List[dict]) -> tuple[int, float]:
+    """
+    Recomputes (shares, average_buy_price) by replaying the transaction ledger.
+    This matches the incremental logic used in `add_or_update_holding`.
+    """
+    shares = 0
+    avg_price = 0.0
+
+    def _sort_key(t: dict):
+        # If Mongo stored `date` as datetime, this works; otherwise falls back.
+        d = t.get("date")
+        return d or datetime.min
+
+    for t in sorted(transactions, key=_sort_key):
+        action = t.get("action")
+        t_shares = int(t.get("shares", 0) or 0)
+        t_price = float(t.get("price", 0) or 0.0)
+
+        if action == "Buy":
+            new_shares = shares + t_shares
+            if new_shares <= 0:
+                shares = 0
+                avg_price = 0.0
+            else:
+                avg_price = ((shares * avg_price) + (t_shares * t_price)) / new_shares
+                shares = new_shares
+        elif action == "Sell":
+            shares = max(0, shares - t_shares)
+            # average_buy_price remains unchanged on sell
+
+    return shares, avg_price
+
+async def delete_transaction(clerk_id: str, transaction_id: str) -> None:
+    """
+    Deletes a single transaction from the ledger and recomputes holding totals.
+    """
+    holding = await db.portfolio.find_one(
+        {"clerk_id": clerk_id, "transactions.transaction_id": transaction_id}
+    )
+    if not holding:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    transactions = holding.get("transactions", []) or []
+    new_transactions = [t for t in transactions if t.get("transaction_id") != transaction_id]
+
+    if len(new_transactions) == len(transactions):
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    new_shares, new_avg_price = _recompute_holding_from_transactions(new_transactions)
+
+    # If this was the last transaction, soft-delete the whole holding (move to bin).
+    soft_delete = len(new_transactions) == 0 or new_shares == 0
+
+    await db.portfolio.update_one(
+        {"_id": holding["_id"]},
+        {
+            "$set": {
+                "transactions": new_transactions,
+                "shares": new_shares,
+                "average_buy_price": new_avg_price,
+                "is_deleted": soft_delete,
+                "deleted_at": datetime.utcnow() if soft_delete else None,
+            }
+        },
+    )
+
 async def empty_bin_items(clerk_id: str):
     """Permanently deletes all binned holdings for a user."""
     await db.portfolio.delete_many({"clerk_id": clerk_id, "is_deleted": True})
@@ -234,6 +437,24 @@ async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
         pl = value - cost
         pl_pct = (pl / cost * 100) if cost > 0 else 0
         
+        # Backfill `transaction_id` for older rows so the UI can delete individual transactions.
+        raw_transactions = item.get("transactions", []) or []
+        txns_changed = False
+        normalized_transactions = []
+        for t in raw_transactions:
+            if t.get("transaction_id"):
+                normalized_transactions.append(t)
+                continue
+            t["transaction_id"] = str(uuid4())
+            txns_changed = True
+            normalized_transactions.append(t)
+
+        if txns_changed:
+            await db.portfolio.update_one(
+                {"_id": item["_id"]},
+                {"$set": {"transactions": normalized_transactions}},
+            )
+
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
             shares=item['shares'],
@@ -243,7 +464,7 @@ async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
             total_value=value,
             profit_loss=pl,
             profit_loss_percent=pl_pct,
-            transactions=[Transaction(**t) for t in item.get('transactions', [])],
+            transactions=[Transaction(**t) for t in normalized_transactions],
             deleted_at=item.get('deleted_at')
         ))
     return response_items
@@ -358,6 +579,24 @@ Respond conversationally and accurately. You have full access to the user's port
     except Exception as e:
         print(f"DuckDuckGo Search error: {e}")
         news_context = "Could not retrieve live news."
+
+    # 3.5 Historical Trend Detection (NEW: AI Data Drive)
+    history_context = "No recent historical trend data available."
+    try:
+        cursor = db.market_history.find({"symbol": symbol}).sort("time", -1).limit(10)
+        recent_history = await cursor.to_list(length=10)
+        if recent_history:
+            history_context = "Recent Price Snapshots (Hourly):\n"
+            for h in reversed(recent_history):
+                h_time = h.get('time', '').split('T')[-1].split('.')[0] if 'T' in h.get('time', '') else str(h.get('time'))
+                history_context += f"- At {h_time}: PKR {h.get('current_price', 0.0):.2f}\n"
+            
+            first_p = recent_history[-1].get('current_price', 0.0) # oldest in set
+            last_p = recent_history[0].get('current_price', 0.0)   # newest
+            trend_pct = ((last_p - first_p) / first_p * 100) if first_p else 0
+            history_context += f"\nApproximate 10-hour trend: {trend_pct:+.2f}%"
+    except Exception as e:
+        print(f"History context error: {e}")
         
     # 4. Antigravity Prompt Construction
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -370,6 +609,9 @@ You have decades of experience navigating the KSE-100 and a reputation for being
 
 **MARKET DATA FOR {symbol}:**
 - Live Price: PKR {live_price}
+- Historical Trend (Last 10 Hours):
+{history_context}
+
 - Live News & Sentiment:
 {news_context}
 

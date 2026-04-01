@@ -26,6 +26,9 @@ class Transaction(APIModel):
     action: str # "Buy" or "Sell"
     shares: int
     price: float
+    # Used by the UI to delete a single transaction from the ledger.
+    # Optional to keep backwards compatibility with existing DB rows.
+    transaction_id: Optional[str] = None
 
 # --- Portfolio Model ---
 class PortfolioItem(APIModel):
@@ -33,7 +36,7 @@ class PortfolioItem(APIModel):
     symbol: str
     shares: int
     average_buy_price: float
-    transactions: List[Transaction] = []
+    transactions: List[Transaction] = Field(default_factory=list)
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
 
@@ -53,7 +56,7 @@ class PortfolioResponseItem(APIModel):
     total_value: float
     profit_loss: float
     profit_loss_percent: float
-    transactions: List[Transaction] = []
+    transactions: List[Transaction] = Field(default_factory=list)
     deleted_at: Optional[datetime] = None
 
 class PortfolioSummary(APIModel):
@@ -63,6 +66,14 @@ class PortfolioSummary(APIModel):
     total_profit_loss: float
     total_profit_loss_percent: float
 
+class PortfolioHistoryPoint(APIModel):
+    clerk_id: str
+    total_value: float
+    total_cost: float
+    total_profit_loss: float
+    total_profit_loss_percent: float
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
 # --- Market Watch Model ---
 class MarketWatch(APIModel):
     symbol: str
@@ -71,7 +82,7 @@ class MarketWatch(APIModel):
     volume: float = 0.0
     high: float = 0.0
     low: float = 0.0
-    sector: str
+    sector: str = "Miscellaneous"
     last_updated: datetime = Field(default_factory=datetime.utcnow)
 
 class SectorPerformance(APIModel):
@@ -90,6 +101,7 @@ class MarketIndex(APIModel):
 class MarketOverview(APIModel):
     indices: List[MarketIndex]
     stocks: List[MarketWatch]
+    sectors: List[SectorPerformance] = Field(default_factory=list)
     status: str = "Open"
 
 # --- AI Analyst Feature Models ---

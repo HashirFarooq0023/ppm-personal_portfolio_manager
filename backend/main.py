@@ -15,22 +15,45 @@ from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
     get_all_indices, get_market_watch, get_sector_performance,
     get_deleted_holdings, restore_holding, get_index_history,
-    generate_stock_analysis, empty_bin_items
+    generate_stock_analysis, empty_bin_items, delete_transaction,
+    record_market_snapshot, record_all_portfolios_snapshot,
+    ensure_indexes
 )
 from scraper import run_psx_scraper
 
 # --- Lifespan Manager ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the background scraper
+    # 1. Verify Database Indexes (Critical for Atlas Free Tier)
+    await ensure_indexes()
+    
+    # 2. Start the background scraper (5-minute loop)
     scraper_task = asyncio.create_task(run_psx_scraper())
+    # 3. Start the history snapshot task (1-hour loop)
+    history_task = asyncio.create_task(run_history_task())
     yield
-    # Cleanup (cancel task)
+    # Cleanup (cancel tasks)
     scraper_task.cancel()
+    history_task.cancel()
     try:
-        await scraper_task
+        await asyncio.gather(scraper_task, history_task)
     except asyncio.CancelledError:
-        print("Scraper background task cancelled.")
+        print("Background tasks cancelled.")
+
+async def run_history_task():
+    """Background worker that records market and portfolio snapshots every hour."""
+    print("[BACKEND] History Snapshot Background Task Started (1-hour loop)")
+    while True:
+        try:
+            # 1. Record Market Snapshot (Stock & Index Prices)
+            await record_market_snapshot()
+            # 2. Record Portfolio Snapshots (User Net Worth)
+            await record_all_portfolios_snapshot()
+        except Exception as e:
+            print(f"[BACKEND] ERROR in history snapshot: {e}")
+            
+        print("=> History Task: Sleeping for 1 hour...")
+        await asyncio.sleep(3600)
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,7 +64,7 @@ app = FastAPI(title="PPM Backend", lifespan=lifespan)
 # On Render: set CORS_ORIGINS to your Vercel URL(s) in the dashboard.
 _raw_origins = os.environ.get(
     "CORS_ORIGINS",
-    "http://localhost:5173,http://localhost:8080"
+    "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173"
 )
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in _raw_origins.split(",") if o.strip()]
 
@@ -108,6 +131,12 @@ async def remove_holding(symbol: str, clerk_id: str = Depends(get_current_user))
     await delete_holding(clerk_id, symbol.upper())
     return {"status": "success", "message": f"Moved {symbol} to bin"}
 
+@app.delete("/api/portfolio/transactions/{transaction_id}")
+async def delete_portfolio_transaction(transaction_id: str, clerk_id: str = Depends(get_current_user)):
+    """Protected: Deletes a single transaction from the ledger and recomputes totals."""
+    await delete_transaction(clerk_id, transaction_id)
+    return {"status": "success", "message": "Transaction deleted."}
+
 @app.get("/api/portfolio/bin", response_model=List[PortfolioResponseItem])
 async def get_bin(clerk_id: str = Depends(get_current_user)):
     """Protected: Returns deleted holdings with P&L info."""
@@ -156,6 +185,6 @@ async def analyze_stock(request: AIAnalysisRequest, clerk_id: str = Depends(get_
 
 if __name__ == "__main__":
     import uvicorn
-    # Grab the port Render assigns, or default to 8080 locally
-    port = int(os.environ.get("PORT", 8080))
+    # Grab the port Render assigns, or default to 8000 locally
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

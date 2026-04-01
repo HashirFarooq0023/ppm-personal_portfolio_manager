@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateCandleData, watchlistStocks, formatPKR, TOP_PSX_SYMBOLS } from '@/data/mockData';
 import CandlestickChart from '@/components/charts/CandlestickChart';
-import { ArrowLeft, TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
+// --- [ NEW ] | Added Sparkles icon for the AI button ---
+import { ArrowLeft, TrendingUp, TrendingDown, Clock, Activity, Sparkles } from 'lucide-react';
 
 export default function ChartTerminal() {
   const { symbol = 'MEBL' } = useParams<{ symbol: string }>();
@@ -56,12 +57,24 @@ export default function ChartTerminal() {
           </div>
         </div>
 
-        <div className="text-right">
-          <div className="text-3xl font-mono-tabular font-bold">{formatPKR(stock.price)}</div>
-          <div className={`flex items-center justify-end gap-1 font-mono-tabular text-sm font-medium ${isPositive ? 'text-psx-green' : 'text-psx-red'}`}>
-            {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            {isPositive ? '+' : ''}{stock.changePercent.toFixed(2)}%
+        {/* --- [ NEW ] | Wrapped price and button in a flex column --- */}
+        <div className="text-right flex flex-col items-end gap-2">
+          <div>
+            <div className="text-3xl font-mono-tabular font-bold">{formatPKR(stock.price)}</div>
+            <div className={`flex items-center justify-end gap-1 font-mono-tabular text-sm font-medium ${isPositive ? 'text-psx-green' : 'text-psx-red'}`}>
+              {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              {isPositive ? '+' : ''}{stock.changePercent.toFixed(2)}%
+            </div>
           </div>
+          
+          {/* --- [ NEW ] | AI Action Button --- */}
+          <button 
+            onClick={() => { /* Trigger your AI Analyst Sheet open state here */ }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors text-xs font-bold uppercase tracking-wider"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Ask AI Analyst
+          </button>
         </div>
       </div>
 

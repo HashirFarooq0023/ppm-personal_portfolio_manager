@@ -1,10 +1,36 @@
 import { SignInButton, SignUpButton } from "@clerk/clerk-react";
 import { TrendingUp, ShieldCheck, Zap } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { useEffect } from "react";
 
 export default function LandingPage() {
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  // Smoothing for the background spotlight
+  const spotlightX = useSpring(mouseX, { stiffness: 50, damping: 20 });
+  const spotlightY = useSpring(mouseY, { stiffness: 50, damping: 20 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseX.set(e.clientX);
+      mouseY.set(e.clientY);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [mouseX, mouseY]);
+
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden selection:bg-primary/30">
+      {/* Interactive Mouse Spotlight */}
+      <motion.div 
+        style={{
+          left: spotlightX,
+          top: spotlightY,
+        }}
+        className="fixed -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px] pointer-events-none z-0"
+      />
+
       {/* Background Moving Grid */}
       <motion.div 
         animate={{ 
@@ -15,7 +41,7 @@ export default function LandingPage() {
           repeat: Infinity, 
           ease: "linear" 
         }}
-        className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" 
+        className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff15_1.5px,transparent_1.5px),linear-gradient(to_bottom,#ffffff15_1.5px,transparent_1.5px)] bg-[size:45px_45px] [mask-image:radial-gradient(ellipse_95%_95%_at_50%_50%,#000_85%,transparent_100%)] pointer-events-none" 
       />
 
       {/* Animated Tracing Lines */}
@@ -75,13 +101,13 @@ export default function LandingPage() {
       />
       <motion.div 
         animate={{ 
-          scale: [1, 1.3, 1],
-          x: [0, -50, 0],
-          y: [0, -30, 0],
-          opacity: [0.03, 0.05, 0.03]
+          scale: [1, 1.4, 1],
+          x: [0, -60, 0],
+          y: [0, -40, 0],
+          opacity: [0.08, 0.12, 0.08]
         }}
         transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-psx-green/5 rounded-full blur-[120px] -z-10 pointer-events-none" 
+        className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-psx-green/10 rounded-full blur-[130px] -z-10 pointer-events-none" 
       />
 
       {/* Neural Pulse Effect */}
@@ -110,46 +136,91 @@ export default function LandingPage() {
       </div>
 
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: { opacity: 0 },
+          visible: { 
+            opacity: 1,
+            transition: { staggerChildren: 0.15, delayChildren: 0.2 }
+          }
+        }}
         className="max-w-4xl w-full text-center space-y-8 relative z-50"
       >
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border/50 bg-accent/30 text-label text-muted-foreground mb-4">
+        <motion.div 
+          variants={{ 
+            hidden: { opacity: 0, y: 10 }, 
+            visible: { opacity: 1, y: 0 } 
+          }}
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border/50 bg-accent/30 text-label text-muted-foreground mb-4"
+        >
           <Zap className="w-3.5 h-3.5 text-psx-green" />
           <span>Real-time PSX Intelligence</span>
-        </div>
+        </motion.div>
 
-        <h1 className="text-display font-bold tracking-tight bg-gradient-to-b from-foreground to-muted-foreground bg-clip-text text-transparent">
+        <motion.h1 
+          variants={{ 
+            hidden: { opacity: 0, y: 20 }, 
+            visible: { opacity: 1, y: 0 } 
+          }}
+          className="text-display font-bold tracking-tight bg-gradient-to-b from-foreground to-muted-foreground bg-clip-text text-transparent"
+        >
           Personal Portfolio <br /> Manager <span className="text-primary font-mono italic">AI BASED</span>
-        </h1>
+        </motion.h1>
         
-        <p className="text-subheader text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+        <motion.p 
+          variants={{ 
+            hidden: { opacity: 0, y: 20 }, 
+            visible: { opacity: 1, y: 0 } 
+          }}
+          className="text-subheader text-muted-foreground max-w-2xl mx-auto leading-relaxed"
+        >
           Track your Pakistan Stock Exchange holdings with surgical precision. 
           Real-time prices, advanced analytics, and premium Glassmorphism design.
-        </p>
+        </motion.p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+        <motion.div 
+          variants={{ 
+            hidden: { opacity: 0, y: 20 }, 
+            visible: { opacity: 1, y: 0 } 
+          }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4"
+        >
           <SignInButton mode="modal">
             <motion.button 
-              whileHover={{ scale: 1.05, boxShadow: "0 0 25px hsl(var(--primary) / 0.4)" }}
+              whileHover={{ 
+                scale: 1.05, 
+                boxShadow: "0 0 30px hsl(var(--primary) / 0.5)",
+                y: -2 
+              }}
               whileTap={{ scale: 0.95 }}
-              className="h-12 px-8 bg-primary text-primary-foreground rounded-xl font-bold transition-shadow shadow-lg shadow-primary/20"
+              className="h-12 px-8 bg-primary text-primary-foreground rounded-xl font-bold transition-all shadow-lg shadow-primary/20"
             >
               Login
             </motion.button>
           </SignInButton>
           <SignUpButton mode="modal">
             <motion.button 
-              whileHover={{ scale: 1.05, backgroundColor: "hsl(var(--surface-hover))" }}
+              whileHover={{ 
+                scale: 1.05, 
+                backgroundColor: "hsl(var(--surface-hover))",
+                y: -2
+              }}
               whileTap={{ scale: 0.95 }}
               className="h-12 px-8 glass-strong border border-border/50 text-foreground rounded-xl font-bold transition-all"
             >
               Create Account
             </motion.button>
           </SignUpButton>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-16">
+        <motion.div 
+          variants={{ 
+            hidden: { opacity: 0, scale: 0.95 }, 
+            visible: { opacity: 1, scale: 1 } 
+          }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-16"
+        >
           <FeatureCard 
             icon={<TrendingUp className="w-5 h-5 text-psx-green" />}
             title="Live Market"
@@ -165,20 +236,48 @@ export default function LandingPage() {
             title="FastAPI Core"
             desc="High-performance Python backend powering your trades."
           />
-        </div>
+        </motion.div>
       </motion.div>
     </div>
   );
 }
 
 function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+
+  const rotateX = useSpring(useTransform(y, [-100, 100], [10, -10]), { stiffness: 100, damping: 30 });
+  const rotateY = useSpring(useTransform(x, [-100, 100], [-10, 10]), { stiffness: 100, damping: 30 });
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    x.set(e.clientX - centerX);
+    y.set(e.clientY - centerY);
+  }
+
+  function handleMouseLeave() {
+    x.set(0);
+    y.set(0);
+  }
+
   return (
-    <div className="glass-strong p-6 rounded-2xl text-left border border-border/20 hover:border-primary/30 transition-colors">
-      <div className="w-10 h-10 rounded-xl bg-accent/50 flex items-center justify-center mb-4 border border-border/20">
+    <motion.div 
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
+      whileHover={{ scale: 1.02 }}
+      className="glass-strong p-6 rounded-2xl text-left border border-border/20 hover:border-primary/40 transition-colors group relative"
+    >
+      <div className="w-10 h-10 rounded-xl bg-accent/50 flex items-center justify-center mb-4 border border-border/20 group-hover:bg-primary/20 transition-colors">
         {icon}
       </div>
-      <h3 className="text-body font-semibold mb-2">{title}</h3>
+      <h3 className="text-body font-semibold mb-2 group-hover:text-primary transition-colors">{title}</h3>
       <p className="text-label text-muted-foreground leading-relaxed">{desc}</p>
-    </div>
+      
+      {/* Inner Glow */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+    </motion.div>
   );
 }

@@ -30,7 +30,7 @@ export interface PortfolioHolding {
 }
 
 export const indices = {
-  kse100: { value: 64822.43, change: 768.21, changePercent: 1.2 },
+  kse100: { value: 60000.43, change: 768.21, changePercent: 1.2 },
   kse30: { value: 28456.12, change: 312.45, changePercent: 1.11 },
   totalVolume: 428_500_000,
 };

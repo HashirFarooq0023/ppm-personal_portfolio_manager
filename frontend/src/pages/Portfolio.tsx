@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { formatPKR, watchlistStocks, generateCandleData, TOP_PSX_SYMBOLS } from '@/data/mockData';
 import CandlestickChart from '@/components/charts/CandlestickChart';
-import { Plus, X, ArrowLeft, Loader2, Trash2, AlertTriangle, TrendingUp, TrendingDown, ArchiveRestore, History, Check } from 'lucide-react';
+// --- [ NEW ] | Added Wallet, Briefcase, and Activity icons for the summary cards ---
+import { Plus, X, ArrowLeft, Loader2, Trash2, AlertTriangle, TrendingUp, TrendingDown, ArchiveRestore, History, Check, Wallet, Briefcase, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-react';
@@ -14,7 +15,8 @@ export default function Portfolio() {
 
   const [showModal, setShowModal] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [deleteSymbol, setDeleteSymbol] = useState<string | null>(null); // State for delete modal
+  const [deleteSymbol, setDeleteSymbol] = useState<string | null>(null); 
+  const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null);
 
   // Fetch Portfolio
   const { data: portfolioData, isLoading } = useQuery({
@@ -26,7 +28,8 @@ export default function Portfolio() {
       });
       if (!res.ok) throw new Error('Failed to fetch portfolio');
       return res.json();
-    }
+    },
+    refetchInterval: 300000 // Poll every 5 minutes
   });
 
   const holdings = portfolioData?.items || [];
@@ -71,7 +74,6 @@ export default function Portfolio() {
   const deleteMutation = useMutation({
     mutationFn: async (symbol: string) => {
       const token = await getToken();
-      // Ensure you create this DELETE endpoint in your FastAPI backend
       const res = await fetch(`/api/portfolio/${symbol}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -84,6 +86,23 @@ export default function Portfolio() {
       queryClient.invalidateQueries({ queryKey: ['portfolio', 'bin'] });
       setDeleteSymbol(null);
       if (selectedSymbol === deletedSymbol) setSelectedSymbol(null);
+    }
+  });
+
+  // Delete Single Transaction Mutation
+  const deleteTransactionMutation = useMutation({
+    mutationFn: async (transactionId: string) => {
+      const token = await getToken();
+      const res = await fetch(`/api/portfolio/transactions/${transactionId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to delete transaction');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      setDeleteTransactionId(null);
     }
   });
 
@@ -124,6 +143,25 @@ export default function Portfolio() {
   const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
 
   const selectedHolding = holdings.find((h: any) => h.symbol === selectedSymbol);
+  const selectedTransaction =
+    deleteTransactionId && selectedHolding?.transactions
+      ? selectedHolding.transactions.find((t: any) => (t.transactionId ?? t.transaction_id) === deleteTransactionId)
+      : null;
+
+  // --- [ NEW ] | Safe Summary Calculation Logic ---
+  // Calculates totals natively to ensure accuracy even if the backend payload shape changes
+  const calculatedTotalCost = holdings.reduce((sum: number, h: any) => sum + (h.totalCost || 0), 0);
+  const calculatedTotalValue = holdings.reduce((sum: number, h: any) => sum + (h.totalValue || 0), 0);
+  const calculatedTotalPL = calculatedTotalValue - calculatedTotalCost;
+  const calculatedTotalPLPercent = calculatedTotalCost > 0 ? (calculatedTotalPL / calculatedTotalCost) * 100 : 0;
+
+  const summary = {
+    cost: portfolioData?.totalCost ?? calculatedTotalCost,
+    value: portfolioData?.totalValue ?? calculatedTotalValue,
+    pl: portfolioData?.totalProfitLoss ?? calculatedTotalPL,
+    plPercent: portfolioData?.totalProfitLossPercent ?? calculatedTotalPLPercent
+  };
+  const isTotalPositive = summary.pl >= 0;
 
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4 md:space-y-6 relative">
@@ -138,6 +176,7 @@ export default function Portfolio() {
             setShowModal(true);
           }}
           onDelete={() => setDeleteSymbol(selectedHolding.symbol)}
+          onDeleteTransaction={(transactionId) => setDeleteTransactionId(transactionId)}
         />
       ) : (
         <>
@@ -145,7 +184,7 @@ export default function Portfolio() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div>
-                <h1 className="text-index font-semibold">Portfolio</h1>
+                <h1 className="text-index font-semibold">My Portfolio</h1>
                 <p className="text-label text-muted-foreground">Tap a tile to view detailed breakdown</p>
               </div>
               {isLoading && <Loader2 className="w-5 h-5 animate-spin text-primary/40" />}
@@ -158,6 +197,47 @@ export default function Portfolio() {
               Add Trade
             </button>
           </div>
+
+          {/* --- [ NEW ] | Portfolio Summary Grid --- */}
+          {holdings.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 my-6">
+              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Wallet className="w-4 h-4 text-primary/70" />
+                  <span className="text-label font-medium uppercase tracking-wider">Total Investment</span>
+                </div>
+                <span className="text-base md:text-xl font-bold font-mono-tabular">{formatPKR(summary.cost)}</span>
+              </div>
+
+              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Briefcase className="w-4 h-4 text-primary/70" />
+                  <span className="text-label font-medium uppercase tracking-wider">Current Value</span>
+                </div>
+                <span className="text-base md:text-xl font-bold font-mono-tabular text-primary">{formatPKR(summary.value)}</span>
+              </div>
+
+              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Activity className="w-4 h-4 text-primary/70" />
+                  <span className="text-label font-medium uppercase tracking-wider">Total P&L</span>
+                </div>
+                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                  {isTotalPositive ? '+' : ''}{formatPKR(summary.pl)}
+                </span>
+              </div>
+
+              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  {isTotalPositive ? <TrendingUp className="w-4 h-4 text-psx-green" /> : <TrendingDown className="w-4 h-4 text-psx-red" />}
+                  <span className="text-label font-medium uppercase tracking-wider">Overall Return</span>
+                </div>
+                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                  {isTotalPositive ? '▲' : '▼'} {Math.abs(summary.plPercent).toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Tiles Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
@@ -232,6 +312,14 @@ export default function Portfolio() {
             isPending={deleteMutation.isPending}
           />
         )}
+        {deleteTransactionId && selectedTransaction && (
+          <DeleteTransactionConfirmModal
+            transaction={selectedTransaction}
+            onClose={() => setDeleteTransactionId(null)}
+            onConfirm={() => deleteTransactionMutation.mutate(deleteTransactionId)}
+            isPending={deleteTransactionMutation.isPending}
+          />
+        )}
         {showEmptyBinConfirm && (
           <EmptyBinConfirmModal
             onClose={() => setShowEmptyBinConfirm(false)}
@@ -241,6 +329,71 @@ export default function Portfolio() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function DeleteTransactionConfirmModal({
+  transaction,
+  onClose,
+  onConfirm,
+  isPending,
+}: {
+  transaction: any;
+  onClose: () => void;
+  onConfirm: () => void;
+  isPending: boolean;
+}) {
+  const action = transaction?.action;
+  const shares = transaction?.shares;
+  const price = transaction?.price;
+  const date = transaction?.date;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 20 }}
+        className="glass-strong border border-destructive/30 rounded-xl w-full max-w-sm p-6 text-center"
+      >
+        <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
+          <Trash2 className="w-6 h-6 text-psx-red" />
+        </div>
+
+        <h2 className="text-subheader font-bold mb-2">Delete Transaction</h2>
+        <p className="text-body text-muted-foreground mb-4">
+          This will remove the {action} of <span className="font-mono-tabular">{shares}</span> shares at{" "}
+          <span className="font-mono-tabular">{formatPKR(price)}</span> from the ledger.
+        </p>
+        <p className="text-[10px] text-muted-foreground mb-6">
+          {date ? new Date(date).toLocaleDateString() : '—'}
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="w-full py-2 rounded-lg font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-lg shadow-destructive/20 transition-all flex items-center justify-center gap-2"
+          >
+            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Delete
+          </button>
+
+          <button
+            onClick={onClose}
+            disabled={isPending}
+            className="w-full py-2 rounded-lg font-medium text-foreground bg-surface hover:bg-surface-hover transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -341,9 +494,6 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
 
     if (!upperSymbol || !parsedShares || !parsedPrice || isPending) return;
 
-    // _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    // < NEW VALIDATION LOGIC START >
-
     // 1 | Check if it is in our local Top 50 list
     const isInTop50 = TOP_PSX_SYMBOLS.some(s => s.symbol === upperSymbol);
 
@@ -362,15 +512,13 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
 
         if (!isValidSymbol) {
           setError(`Error: Please enter a valid PSX symbol. '${upperSymbol}' does not exist on the exchange.`);
-          return; // Stop the form submission
+          return; 
         }
       } catch (err) {
         setError("Unable to verify symbol right now. Please check your connection.");
         return;
       }
     }
-    // < NEW VALIDATION LOGIC END >
-    // _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
     // Validation: Selling more than owned
     if (action === 'Sell') {

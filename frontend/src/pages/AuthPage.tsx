@@ -1,10 +1,34 @@
 import { SignIn, SignUp } from "@clerk/clerk-react";
 import { dark } from "@clerk/themes";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useSpring } from "framer-motion";
+import { useEffect } from "react";
 
 export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  const spotlightX = useSpring(mouseX, { stiffness: 50, damping: 20 });
+  const spotlightY = useSpring(mouseY, { stiffness: 50, damping: 20 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseX.set(e.clientX);
+      mouseY.set(e.clientY);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [mouseX, mouseY]);
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Interactive Mouse Spotlight */}
+      <motion.div 
+        style={{
+          left: spotlightX,
+          top: spotlightY,
+        }}
+        className="fixed -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/15 rounded-full blur-[100px] pointer-events-none z-0"
+      />
       {/* Background Moving Grid */}
       <motion.div 
         animate={{ 
@@ -15,7 +39,7 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           repeat: Infinity, 
           ease: "linear" 
         }}
-        className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" 
+        className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff15_1.5px,transparent_1.5px),linear-gradient(to_bottom,#ffffff15_1.5px,transparent_1.5px)] bg-[size:45px_45px] [mask-image:radial-gradient(ellipse_90%_90%_at_50%_50%,#000_80%,transparent_100%)] pointer-events-none" 
       />
 
       {/* Animated Tracing Lines */}
@@ -70,13 +94,13 @@ export default function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
       />
       <motion.div 
         animate={{ 
-          scale: [1, 1.1, 1],
-          x: [0, -30, 0],
-          y: [0, 30, 0],
-          opacity: [0.05, 0.07, 0.05]
+          scale: [1, 1.2, 1],
+          x: [0, -40, 0],
+          y: [0, 40, 0],
+          opacity: [0.1, 0.15, 0.1]
         }}
         transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="absolute bottom-1/4 right-1/3 w-[500px] h-[500px] bg-psx-green/5 rounded-full blur-[120px] -z-10" 
+        className="absolute bottom-1/4 right-1/3 w-[600px] h-[600px] bg-psx-green/10 rounded-full blur-[140px] -z-10" 
       />
 
       {/* AI Data Streams */}

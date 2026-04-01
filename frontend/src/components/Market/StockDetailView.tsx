@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeft, Trash2, TrendingUp, TrendingDown, ReceiptText } from 'lucide-react';
 import { formatPKR, formatNumber, generateCandleData } from '@/data/mockData';
+import { useQuery } from '@tanstack/react-query';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import { DetailCard } from '@/components/ui/detail-card';
 
@@ -12,6 +13,7 @@ interface StockDetailViewProps {
   onBack: () => void;
   onTrade?: () => void;
   onDelete?: () => void;
+  onDeleteTransaction?: (transactionId: string) => void;
 }
 
 export default function StockDetailView({
@@ -21,12 +23,51 @@ export default function StockDetailView({
   portfolioHolding,
   onBack,
   onTrade,
-  onDelete
+  onDelete,
+  onDeleteTransaction
 }: StockDetailViewProps) {
   const currentPrice = marketData?.currentPrice ?? portfolioHolding?.currentPrice ?? 0;
   const changePercent = marketData?.changePercent ?? portfolioHolding?.profitLossPercent ?? 0;
   const isPositive = changePercent >= 0;
-  const candleData = useMemo(() => generateCandleData(90, currentPrice), [symbol, currentPrice]);
+  const [timeRange, setTimeRange] = useState('3M');
+
+  // 1. Fetch Real History for the Stock
+  const { data: historyData } = useQuery({
+    queryKey: ['stockHistory', symbol],
+    queryFn: async () => {
+      const res = await fetch(`/api/market/history/${symbol}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 300000, // Sync with 5-minute scraper
+  });
+
+  const candleData = useMemo(() => {
+    // 2. Prioritize Real Database History
+    if (historyData && historyData.length > 0) {
+      return historyData.map((pt: any, i: number) => {
+        const prev = historyData[i - 1] || pt;
+        return {
+          time: pt.time,
+          open: prev.value,
+          high: Math.max(prev.value, pt.value),
+          low: Math.min(prev.value, pt.value),
+          close: pt.value,
+        };
+      });
+    }
+
+    // 3. Keep fallback for smooth transition when no history points exist yet
+    const rangeMap: Record<string, number> = {
+      'Current': 24, 
+      '1M': 30,
+      '3M': 90,
+      '1Y': 365
+    };
+    const days = rangeMap[timeRange] || 90;
+    return generateCandleData(days, currentPrice);
+  }, [historyData, currentPrice, timeRange]);
+  const txnCount = portfolioHolding?.transactions?.length ?? 0;
 
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-6">
@@ -50,7 +91,7 @@ export default function StockDetailView({
         </div>
 
         <div className="text-right">
-          <div className="text-2xl font-mono-tabular font-bold">{formatPKR(currentPrice)}</div>
+          <div className="text-lg md:text-2xl font-mono-tabular font-bold">{formatPKR(currentPrice)}</div>
           <div className={`flex items-center justify-end gap-1 font-mono-tabular text-sm font-medium ${isPositive ? 'text-psx-green' : 'text-psx-red'}`}>
             {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
             {isPositive ? '+' : ''}{changePercent.toFixed(2)}%
@@ -118,11 +159,12 @@ export default function StockDetailView({
             Price History
           </h3>
           <div className="flex gap-2">
-            {['1D', '1W', '1M', '3M', '1Y'].map(range => (
+            {['Current', '1M', '3M', '1Y'].map(range => (
               <button 
                 key={range}
+                onClick={() => setTimeRange(range)}
                 className={`text-[10px] px-2.5 py-1 rounded-md font-bold transition-colors ${
-                  range === '3M' ? 'bg-primary text-primary-foreground' : 'glass hover:bg-surface-hover'
+                  range === timeRange ? 'bg-primary text-primary-foreground' : 'glass hover:bg-surface-hover'
                 }`}
               >
                 {range}
@@ -168,6 +210,7 @@ export default function StockDetailView({
               <table className="w-full text-left text-sm">
                 <thead className="text-muted-foreground bg-white/5">
                   <tr>
+                    <th className="px-6 py-3 font-medium text-right w-[44px]"> </th>
                     <th className="px-6 py-3 font-medium">Date</th>
                     <th className="px-6 py-3 font-medium">Type</th>
                     <th className="px-6 py-3 font-medium text-right">Qty</th>
@@ -177,6 +220,44 @@ export default function StockDetailView({
                 <tbody className="divide-y divide-white/5">
                   {portfolioHolding.transactions?.map((txn: any, i: number) => (
                     <tr key={i} className="hover:bg-white/5 transition-colors">
+                      <td className="px-6 py-3 text-right">
+                        {/*
+                          If this ledger has only 1 transaction, deleting it should delete the whole holding.
+                          Otherwise we delete the individual transaction (needs transactionId).
+                        */}
+                        {(() => {
+                          const txnId = txn.transactionId ?? txn.transaction_id;
+                          const canDeleteCompany = txnCount <= 1 && !!onDelete;
+                          const canDeleteTxn = txnCount > 1 && !!onDeleteTransaction && !!txnId;
+                          const disabled = !(canDeleteCompany || canDeleteTxn);
+
+                          return (
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg glass hover:bg-destructive/10 text-psx-red transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+                          title="Delete transaction"
+                          disabled={disabled}
+                          onClick={(e) => {
+                            e.stopPropagation();
+
+                            // If this is the only transaction, delete the whole company/holding.
+                            if (txnCount <= 1) {
+                              if (!onDelete) return;
+                              onDelete();
+                              return;
+                            }
+
+                            // Otherwise delete just this transaction (requires transactionId).
+                            if (txnId && onDeleteTransaction) {
+                              onDeleteTransaction(txnId);
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                          );
+                        })()}
+                      </td>
                       <td className="px-6 py-3 text-muted-foreground">{new Date(txn.date).toLocaleDateString()}</td>
                       <td className={`px-6 py-3 font-medium ${txn.action === 'Buy' ? 'text-psx-green' : 'text-psx-red'}`}>
                         {txn.action}

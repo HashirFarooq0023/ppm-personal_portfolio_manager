@@ -1,6 +1,6 @@
 import { indices as mockIndices, sectorPerformance, generateIndexData, generateCandleData, formatNumber, formatPKR } from '@/data/mockData';
 import { useState, useMemo } from 'react';
-import { TrendingUp, TrendingDown, BarChart3, Loader2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, Loader2, ArrowUpRight, ArrowDownRight, Search } from 'lucide-react';
 import CandlestickChart from '@/components/charts/CandlestickChart';
 import { useQuery } from '@tanstack/react-query';
 import StockDetailView from '@/components/Market/StockDetailView';
@@ -11,6 +11,8 @@ export default function Dashboard() {
   const { getToken } = useAuth();
   const navigate = useNavigate();
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [timeRange, setTimeRange] = useState('3M');
 
   const { data: portfolioData } = useQuery({
     queryKey: ['portfolio'],
@@ -22,7 +24,8 @@ export default function Dashboard() {
       });
       if (!res.ok) return null;
       return res.json();
-    }
+    },
+    refetchInterval: 300000 // Poll every 5 minutes
   });
 
   const { data: marketOverview, isLoading } = useQuery({
@@ -66,12 +69,40 @@ export default function Dashboard() {
   }, [marketOverview]);
 
   const kseData = useMemo(() => {
-    // For the index candlestick, we'll generate professional OHLC data 
-    // seeded by the current live index value
-    return generateCandleData(90, liveIndices.kse100?.value || 64000);
-  }, [liveIndices.kse100?.value]);
+    // 1. Prioritize Real History from the Backend
+    if (indexHistory && indexHistory.length > 0) {
+      return indexHistory.map((pt: any, i: number) => {
+        const prev = indexHistory[i - 1] || pt;
+        return {
+          time: pt.time,
+          open: prev.value,
+          high: Math.max(prev.value, pt.value),
+          low: Math.min(prev.value, pt.value),
+          close: pt.value,
+        };
+      });
+    }
+
+    // 2. Fallback to generated data (limited)
+    const rangeMap: Record<string, number> = {
+      'Current': 24,
+      '1M': 30,
+      '3M': 90,
+      '1Y': 365
+    };
+    const days = rangeMap[timeRange] || 90;
+    return generateCandleData(days, liveIndices.kse100?.value || 64000);
+  }, [indexHistory, liveIndices.kse100?.value, timeRange]);
 
   const liveStocks = marketOverview?.stocks || [];
+  
+  const filteredStocks = useMemo(() => {
+    if (!searchQuery) return liveStocks;
+    return liveStocks.filter((s: any) => 
+      s.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [liveStocks, searchQuery]);
+
   const topGainers = [...liveStocks].sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0)).slice(0, 4);
   const topLosers = [...liveStocks].sort((a, b) => (a.changePercent || 0) - (b.changePercent || 0)).slice(0, 4);
 
@@ -94,7 +125,7 @@ export default function Dashboard() {
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 h-full overflow-y-auto scrollbar-thin">
       {/* Index Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 relative">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-4 relative">
         {isLoading && (
           <div className="absolute top-2 right-2 animate-spin text-primary/40">
             <Loader2 className="w-4 h-4" />
@@ -102,7 +133,7 @@ export default function Dashboard() {
         )}
         <IndexCard label="KSE-100" value={liveIndices.kse100?.value ?? 0} change={liveIndices.kse100?.change ?? 0} pct={liveIndices.kse100?.changePercent ?? 0} />
         <IndexCard label="KSE-30" value={liveIndices.kse30?.value ?? 0} change={liveIndices.kse30?.change ?? 0} pct={liveIndices.kse30?.changePercent ?? 0} />
-        <div className="glass rounded-xl p-4">
+        <div className="glass rounded-xl p-3 md:p-4">
           <div className="text-header-caps uppercase tracking-wider text-muted-foreground font-semibold mb-1">Total Volume</div>
           <div className="text-index font-mono-tabular text-foreground">{formatNumber(liveIndices.totalVolume)}</div>
           <div className="flex items-center gap-1 mt-1">
@@ -114,7 +145,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
         {/* KSE-100 Chart */}
-        <div className="lg:col-span-8 glass rounded-xl p-4">
+        <div className="lg:col-span-8 glass rounded-xl p-4 flex flex-col">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
             <div>
               <h2 className="text-subheader font-semibold flex items-center gap-2">
@@ -124,11 +155,12 @@ export default function Dashboard() {
               <span className="text-label text-muted-foreground">Market Trend Analysis</span>
             </div>
             <div className="flex gap-2">
-              {['1D', '1W', '1M', '3M', '1Y'].map(range => (
+              {['Current', '1M', '3M', '1Y'].map(range => (
                 <button 
                   key={range}
+                  onClick={() => setTimeRange(range)}
                   className={`text-[10px] px-2.5 py-1 rounded-md font-bold transition-colors ${
-                    range === '3M' ? 'bg-primary text-primary-foreground' : 'glass hover:bg-surface-hover'
+                    range === timeRange ? 'bg-primary text-primary-foreground' : 'glass hover:bg-surface-hover'
                   }`}
                 >
                   {range}
@@ -136,13 +168,13 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <div className="h-[350px]">
-            <CandlestickChart data={kseData} height={350} />
+          <div className="flex-1 min-h-[480px]">
+            <CandlestickChart data={kseData} height={480} />
           </div>
         </div>
 
-        {/* Top Gainers/Losers */}
-        <div className="lg:col-span-4 space-y-4">
+        {/* Top Gainers/Losers - Hidden on mobile */}
+        <div className="hidden lg:block lg:col-span-4 space-y-4">
           <div className="glass rounded-xl p-4">
             <h2 className="text-subheader font-semibold mb-3 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-psx-green" />
@@ -197,34 +229,24 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Sector Performance */}
-      <div className="glass rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-subheader font-semibold">Sector Performance</h2>
-          {(marketOverview?.sectors?.length > 0) && (
-            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium uppercase tracking-wider">Live</span>
-          )}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {(marketOverview?.sectors?.length > 0 ? marketOverview.sectors : sectorPerformance).map((sector: any) => (
-            <div key={sector.name} className="flex items-center justify-between py-2 px-3 bg-accent/30 rounded-lg transition-colors hover:bg-accent/40">
-              <div>
-                <div className="text-body font-medium">{sector.name}</div>
-                <div className="text-label text-muted-foreground">{sector.value.toFixed(2)}% of market</div>
-              </div>
-              <span className={`font-mono-tabular text-body font-medium ${(sector.change ?? 0) >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
-                {(sector.change ?? 0) >= 0 ? '+' : ''}{(sector.change ?? 0).toFixed(2)}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Market Watch (All tracked stocks) */}
       <div className="glass rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-subheader font-semibold">Market Watch</h2>
-          <span className="text-label text-muted-foreground">{liveStocks.length} Companies Tracked</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div>
+            <h2 className="text-subheader font-semibold">Market Watch</h2>
+            <span className="text-label text-muted-foreground">{filteredStocks.length} Companies Tracked</span>
+          </div>
+          
+          <div className="relative max-w-xs w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+            <input
+              type="text"
+              placeholder="search companies here"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-9 pl-9 pr-3 text-body glass rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -239,7 +261,7 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {liveStocks.map((stock: any) => (
+              {filteredStocks.map((stock: any) => (
                 <tr 
                   key={stock.symbol} 
                   onClick={() => setSelectedStock(stock.symbol)}
@@ -266,9 +288,9 @@ export default function Dashboard() {
 function IndexCard({ label, value, change, pct }: { label: string; value: number; change: number; pct: number }) {
   const positive = pct >= 0;
   return (
-    <div className="glass rounded-xl p-4">
+    <div className="glass rounded-xl p-3 md:p-4">
       <div className="text-header-caps uppercase tracking-wider text-muted-foreground font-semibold mb-1">{label}</div>
-      <div className="text-index font-mono-tabular text-foreground">{value.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      <div className="text-lg md:text-index font-mono-tabular text-foreground">{value.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
       <div className="flex items-center gap-1.5 mt-1">
         {positive ? (
           <TrendingUp className="w-3.5 h-3.5 text-psx-green" strokeWidth={1.5} />

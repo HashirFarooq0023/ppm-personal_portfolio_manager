@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { sectorPerformance as mockSectors, sectorCompanies as mockCompanies, formatPKR, formatNumber } from '@/data/mockData';
-import { 
-  ArrowLeft, Search, Loader2, ChevronRight, 
-  Landmark, Flame, Droplets, Leaf, 
-  Building2, Monitor, Shirt, Zap, 
-  Pill, Beaker, Settings, Car, 
-  ShieldCheck, Utensils, Candy, Box, 
-  FileText, Wallet, Coins, Handshake, 
+import { formatPKR, formatNumber } from '@/data/mockData';
+import {
+  ArrowLeft, Search, Loader2, ChevronRight,
+  Landmark, Flame, Droplets, Leaf,
+  Building2, Monitor, Shirt, Zap,
+  Pill, Beaker, Settings, Car,
+  ShieldCheck, Utensils, Candy, Box,
+  FileText, Wallet, Coins, Handshake,
   Home, Truck, MoreHorizontal, Cpu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -56,17 +56,22 @@ const getSectorIcon = (name: string) => {
   return MoreHorizontal;
 };
 
+// --- Backend URL Bridge ---
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 export default function Sectors() {
   const { getToken } = useAuth();
   const navigate = useNavigate();
+
   const { data: marketOverview, isLoading } = useQuery({
     queryKey: ['marketOverview'],
     queryFn: async () => {
-      const res = await fetch('/api/market/overview');
+      const res = await fetch(`${API_URL}/api/market/overview`);
       if (!res.ok) return null;
       return res.json();
     },
-    refetchInterval: 10000
+    // Updated: Exactly 5 minutes (300,000 ms) to match the backend scraper
+    refetchInterval: 300000
   });
 
   const { data: portfolioData } = useQuery({
@@ -74,24 +79,44 @@ export default function Sectors() {
     queryFn: async () => {
       const token = await getToken();
       if (!token) return null;
-      const res = await fetch('/api/portfolio', {
+      const res = await fetch(`${API_URL}/api/portfolio`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) return null;
       return res.json();
-    }
+    },
+    refetchInterval: 300000 // Poll every 5 minutes
   });
 
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
 
-  const sectors = marketOverview?.sectors?.length > 0 ? marketOverview.sectors : mockSectors;
-  const max = Math.max(...sectors.map((s: any) => s.value));
+  const sectors = marketOverview?.sectors ?? [];
+  const max = sectors.length ? Math.max(...sectors.map((s: any) => s.value)) : 1;
+
+  // --- Loading State: Prevents blank screen on initial fetch ---
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-4 md:p-6">
+        <Loader2 className="w-8 h-8 animate-spin text-primary/50" />
+        <p className="text-label text-muted-foreground">Loading sector data from PSX...</p>
+      </div>
+    );
+  }
+
+  if (!selectedSector && !selectedStock && !isLoading && sectors.length === 0) {
+    return (
+      <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4 md:space-y-6">
+        <h1 className="text-index font-semibold">Sector Heatmap</h1>
+        <p className="text-label text-muted-foreground">No sector data available right now.</p>
+      </div>
+    );
+  }
 
   if (selectedStock) {
     const stockData = marketOverview?.stocks?.find((s: any) => s.symbol === selectedStock);
     const portfolioHolding = portfolioData?.items?.find((h: any) => h.symbol === selectedStock);
-    
+
     return (
       <StockDetailView
         symbol={selectedStock}
@@ -106,9 +131,9 @@ export default function Sectors() {
 
   if (selectedSector) {
     return (
-      <SectorDetail 
-        sector={selectedSector} 
-        onBack={() => setSelectedSector(null)} 
+      <SectorDetail
+        sector={selectedSector}
+        onBack={() => setSelectedSector(null)}
         liveStocks={marketOverview?.stocks || []}
         onSelectStock={setSelectedStock}
       />
@@ -148,9 +173,8 @@ export default function Sectors() {
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
 
               <div className="relative flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:rotate-12 ${
-                  positive ? 'bg-psx-green/10 text-psx-green shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-psx-red/10 text-psx-red shadow-[0_0_15px_rgba(239,68,68,0.1)]'
-                }`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:rotate-12 ${positive ? 'bg-psx-green/10 text-psx-green shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-psx-red/10 text-psx-red shadow-[0_0_15px_rgba(239,68,68,0.1)]'
+                  }`}>
                   <Icon className="w-6 h-6" strokeWidth={1.5} />
                 </div>
 
@@ -161,10 +185,10 @@ export default function Sectors() {
                       {positive ? '▲' : '▼'} {Math.abs(sector.change).toFixed(2)}%
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between mt-1.5">
                     <div className="text-label text-muted-foreground font-medium">
-                      {sector.value.toFixed(1)}% Market Cap
+                      {sector.value.toFixed(1)}% Relative Size
                     </div>
                     <div className="flex items-center gap-1 text-[10px] text-primary/40 group-hover:text-primary transition-all font-bold uppercase tracking-widest">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity">View Details</span>
@@ -183,17 +207,16 @@ export default function Sectors() {
 
 function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: string; onBack: () => void; liveStocks: any[]; onSelectStock: (symbol: string) => void }) {
   const [query, setQuery] = useState('');
-  
-  // Use live stocks filtered by sector, fallback to mock if empty
+
   const sectorStocks = liveStocks.filter(s => s.sector === sector);
-  const companies = sectorStocks.length > 0 ? sectorStocks : (mockCompanies[sector] || []);
+  const companies = sectorStocks;
 
   const filtered = query.length > 0
     ? companies.filter(c =>
-        c.symbol.toLowerCase().includes(query.toLowerCase()) ||
-        (c.name || '').toLowerCase().includes(query.toLowerCase())
-      )
-    : [...companies].sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0)).slice(0, 10);
+      c.symbol.toLowerCase().includes(query.toLowerCase()) ||
+      (c.name || '').toLowerCase().includes(query.toLowerCase())
+    )
+    : [...companies].sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0));
 
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4">
@@ -237,7 +260,7 @@ function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: s
             >
               {/* Shine effect on hover */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-              
+
               <div className="relative flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">

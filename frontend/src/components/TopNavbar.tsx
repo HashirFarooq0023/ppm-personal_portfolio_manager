@@ -7,10 +7,10 @@ export default function TopNavbar() {
   const { theme, toggle } = useTheme();
 
   return (
-    <header className="h-20 flex items-center px-6 gap-4 glass-strong border-b border-border/10 bg-background/50 backdrop-blur-md relative z-50">
+    <header className="h-16 md:h-20 flex items-center px-6 gap-4 glass-strong border-b border-border/10 bg-background/50 backdrop-blur-md relative z-50">
       <div className="flex items-center gap-2">
         <div className="w-2.5 h-2.5 rounded-full bg-psx-green shadow-[0_0_10px_#10B981]" />
-        <span className="text-3xl font-bold tracking-wider text-foreground">PPM</span>
+        <span className="text-xl md:text-3xl font-bold tracking-wider text-foreground">PPM</span>
         <span className="text-xs text-muted-foreground ml-2 mt-2 tracking-widest hidden sm:inline">AI BASED</span>
       </div>
 
