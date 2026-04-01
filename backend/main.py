@@ -64,7 +64,7 @@ app = FastAPI(title="PPM Backend", lifespan=lifespan)
 # On Render: set CORS_ORIGINS to your Vercel URL(s) in the dashboard.
 _raw_origins = os.environ.get(
     "CORS_ORIGINS",
-    "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173"
+    "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,https://ppm-personal-portfolio-manager.vercel.app"
 )
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in _raw_origins.split(",") if o.strip()]
 
@@ -104,7 +104,7 @@ async def ping():
 @app.get("/")
 def redirect_to_dashboard():
     # Redirecting to your Vercel frontend
-    return RedirectResponse(url="https://ppm-personal-portfolio-manager-qsfto20jk.vercel.app/dashboard")
+    return RedirectResponse(url="https://ppm-personal-portfolio-manager.vercel.app/dashboard")
 
 
 @app.get("/api/portfolio", response_model=PortfolioSummary)
