@@ -42,14 +42,22 @@ export default function Dashboard() {
     refetchInterval: 10000,
   });
 
-  const { data: indexHistory } = useQuery({
-    queryKey: ['indexHistory', 'KSE100'],
+  const { data: indexHistory, isLoading: isHistoryLoading } = useQuery({
+    queryKey: ['indexHistory', 'KSE100', timeRange],
     queryFn: async () => {
-      const res = await fetch('/api/market/history/KSE100');
+      const daysMap: Record<string, number> = {
+        'Current': 7,   // 7 days
+        '1M': 30,       // 30 days
+        '3M': 90,       // 90 days
+        '1Y': 365,      // 365 days
+        'ALL': 1000     // Roughly all data
+      };
+      const currentDays = daysMap[timeRange] || 30;
+      const res = await fetch(`/api/market/history/KSE100?days=${currentDays}`);
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Refresh every minute
   });
 
   // Map API data to UI structure, fallback to mock data
@@ -148,11 +156,11 @@ export default function Dashboard() {
         <div className="lg:col-span-8 glass rounded-xl p-4 flex flex-col">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
             <div>
-              <h2 className="text-subheader font-semibold flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-primary" />
+              <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-text-primary">
+                <TrendingUp className="w-5 h-5 text-primary" />
                 KSE-100 Index History
               </h2>
-              <span className="text-label text-muted-foreground">Market Trend Analysis</span>
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Market Trend Analysis</span>
             </div>
             <div className="flex gap-2">
               {['Current', '1M', '3M', '1Y'].map(range => (
@@ -169,7 +177,14 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex-1 min-h-[480px]">
-            <CandlestickChart data={kseData} height={480} />
+             {isHistoryLoading ? (
+               <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                 <p className="text-sm font-medium">Fetching historical KSE-100 snapshots...</p>
+               </div>
+             ) : (
+               <CandlestickChart data={kseData} height={480} />
+             )}
           </div>
         </div>
 
@@ -185,9 +200,9 @@ export default function Dashboard() {
                 <button 
                   key={stock.symbol} 
                   onClick={() => setSelectedStock(stock.symbol)}
-                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
                 >
-                  <div className="font-semibold">{stock.symbol}</div>
+                  <div className="font-bold text-text-primary">{stock.symbol}</div>
                   <div className="text-right">
                     <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
                     <div className="text-xs text-psx-green flex items-center justify-end gap-0.5">
@@ -211,9 +226,9 @@ export default function Dashboard() {
                 <button 
                   key={stock.symbol} 
                   onClick={() => setSelectedStock(stock.symbol)}
-                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
                 >
-                  <div className="font-semibold">{stock.symbol}</div>
+                  <div className="font-bold text-text-primary">{stock.symbol}</div>
                   <div className="text-right">
                     <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
                     <div className="text-xs text-psx-red flex items-center justify-end gap-0.5">
@@ -238,13 +253,13 @@ export default function Dashboard() {
           </div>
           
           <div className="relative max-w-xs w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" strokeWidth={1.5} />
             <input
               type="text"
               placeholder="search companies here"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-9 pl-9 pr-3 text-body glass rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              className="w-full h-9 pl-9 pr-3 text-body glass-strong border border-border/40 rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
         </div>

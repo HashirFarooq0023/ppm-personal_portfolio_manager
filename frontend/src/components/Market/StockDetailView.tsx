@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Trash2, TrendingUp, TrendingDown, ReceiptText } from 'lucide-react';
+import { ArrowLeft, Trash2, TrendingUp, TrendingDown, ReceiptText, Loader2 } from 'lucide-react';
 import { formatPKR, formatNumber, generateCandleData } from '@/data/mockData';
 import { useQuery } from '@tanstack/react-query';
 import CandlestickChart from '@/components/charts/CandlestickChart';
@@ -32,14 +32,22 @@ export default function StockDetailView({
   const [timeRange, setTimeRange] = useState('3M');
 
   // 1. Fetch Real History for the Stock
-  const { data: historyData } = useQuery({
-    queryKey: ['stockHistory', symbol],
+  const { data: historyData, isLoading: isHistoryLoading } = useQuery({
+    queryKey: ['stockHistory', symbol, timeRange],
     queryFn: async () => {
-      const res = await fetch(`/api/market/history/${symbol}`);
+      const daysMap: Record<string, number> = {
+        'Current': 7,   // 7 days
+        '1M': 30,       // 30 days
+        '3M': 90,       // 90 days
+        '1Y': 365,      // 365 days
+        'ALL': 1000     // Roughly all data
+      };
+      const currentDays = daysMap[timeRange] || 30;
+      const res = await fetch(`/api/market/history/${symbol}?days=${currentDays}`);
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 300000, // Sync with 5-minute scraper
+    refetchInterval: 300000, 
   });
 
   const candleData = useMemo(() => {
@@ -59,7 +67,7 @@ export default function StockDetailView({
 
     // 3. Keep fallback for smooth transition when no history points exist yet
     const rangeMap: Record<string, number> = {
-      'Current': 24, 
+      'Current': 7, 
       '1M': 30,
       '3M': 90,
       '1Y': 365

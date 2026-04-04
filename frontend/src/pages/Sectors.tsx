@@ -107,8 +107,8 @@ export default function Sectors() {
   if (!selectedSector && !selectedStock && !isLoading && sectors.length === 0) {
     return (
       <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4 md:space-y-6">
-        <h1 className="text-index font-semibold">Sector Heatmap</h1>
-        <p className="text-label text-muted-foreground">No sector data available right now.</p>
+        <h1 className="text-2xl md:text-3xl font-extrabold text-text-primary tracking-tight">Sector Heatmap</h1>
+        <p className="text-xs font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">No sector data available right now.</p>
       </div>
     );
   }
@@ -143,8 +143,8 @@ export default function Sectors() {
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-index font-semibold">Sector Heatmap</h1>
-        <p className="text-label text-muted-foreground">Market capitalization distribution and daily performance by sector.</p>
+        <h1 className="text-2xl md:text-3xl font-extrabold text-text-primary tracking-tight">Sector Heatmap</h1>
+        <p className="text-xs font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">Market capitalization distribution and daily performance by sector.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4">
@@ -158,7 +158,7 @@ export default function Sectors() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setSelectedSector(sector.name)}
-              className="glass rounded-xl p-5 relative overflow-hidden text-left w-full group transition-all duration-300 hover:border-psx-green/30"
+              className="glass-strong rounded-xl p-5 relative overflow-hidden text-left w-full group transition-all duration-300 border border-border/60 hover:border-psx-green/30 shadow-sm hover:shadow-md"
             >
               {/* Background bar */}
               <div
@@ -187,10 +187,10 @@ export default function Sectors() {
                   </div>
 
                   <div className="flex items-center justify-between mt-1.5">
-                    <div className="text-label text-muted-foreground font-medium">
+                    <div className="text-[10px] text-text-muted font-bold uppercase tracking-wider">
                       {sector.value.toFixed(1)}% Relative Size
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-primary/40 group-hover:text-primary transition-all font-bold uppercase tracking-widest">
+                    <div className="flex items-center gap-1 text-[10px] text-primary group-hover:text-primary transition-all font-bold uppercase tracking-widest">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity">View Details</span>
                       <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                     </div>
@@ -226,8 +226,8 @@ function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: s
           <ArrowLeft className="w-4 h-4" strokeWidth={1.5} />
         </button>
         <div>
-          <h1 className="text-index font-semibold">{sector}</h1>
-          <p className="text-label text-muted-foreground">Top companies in this sector</p>
+          <h1 className="text-xl md:text-2xl font-extrabold text-text-primary tracking-tight">{sector}</h1>
+          <p className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">Top companies in this sector</p>
         </div>
       </div>
 
@@ -239,7 +239,7 @@ function SectorDetail({ sector, onBack, liveStocks, onSelectStock }: { sector: s
           placeholder="Search company in this sector..."
           value={query}
           onChange={e => setQuery(e.target.value)}
-          className="w-full h-9 pl-9 pr-3 text-body glass rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+          className="w-full h-10 pl-9 pr-3 text-body glass-strong border border-border/60 rounded-xl text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-all font-medium"
         />
       </div>
 

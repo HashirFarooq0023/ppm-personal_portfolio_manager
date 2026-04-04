@@ -5,6 +5,7 @@ import { Sparkles, Loader2, BrainCircuit, Target, PieChart, TrendingUp, Send, Ch
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetTitle,
   SheetTrigger,
   SheetClose,
@@ -12,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@clerk/clerk-react";
+import { useTheme } from "@/hooks/useTheme";
 import ReactMarkdown from "react-markdown";
 import { motion, AnimatePresence } from "framer-motion";
 import { TOP_PSX_SYMBOLS } from "@/data/mockData";
@@ -31,6 +33,7 @@ const QUERY_TILES = [
 
 export const AIAnalystSheet = () => {
   const { getToken } = useAuth();
+  const { theme } = useTheme();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [symbol, setSymbol] = useState<string>("");
@@ -187,22 +190,25 @@ export const AIAnalystSheet = () => {
         </SheetTrigger>
 
         {/* Added [&>button.absolute]:hidden to remove Shadcn's default close icon */}
-        <SheetContent className="[&>button.absolute]:hidden w-[100vw] h-[100dvh] max-w-[100vw] sm:w-[100vw] sm:max-w-[100vw] md:w-[100vw] md:max-w-[100vw] bg-background/95 bg-diagonal-pattern backdrop-blur-3xl border-none shadow-[0_0_50px_rgba(16,185,129,0.1)] flex flex-col p-0 !m-0 overflow-hidden fixed inset-y-0 right-0 z-50">
+        <SheetContent className="[&>button.absolute]:hidden w-[100vw] h-[100dvh] max-w-[100vw] sm:w-[100vw] sm:max-w-[100vw] md:w-[100vw] md:max-w-[100vw] bg-background dark:bg-background/95 dark:bg-diagonal-pattern backdrop-blur-3xl border-none shadow-[0_0_50px_rgba(16,185,129,0.1)] flex flex-col p-0 !m-0 overflow-hidden fixed inset-y-0 right-0 z-50">
 
           {/* 1. Ambient Background Glows */}
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
 
           {/* Fixed Header */}
-          <div className="p-6 pb-4 border-b border-white/5 bg-transparent relative z-50 shrink-0 pointer-events-none">
+          <div className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border/10 bg-background/80 backdrop-blur-xl relative z-50 shrink-0 pointer-events-none">
             <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/20 rounded-full blur-3xl -z-10"></div>
-              <SheetTitle className="flex items-center text-emerald-400 text-2xl gap-2 font-light tracking-wide m-0 pointer-events-auto">
-                <Sparkles className="w-5 h-5 text-emerald-400" />
+              <SheetTitle className="flex items-center text-emerald-700 dark:text-emerald-400 text-lg sm:text-2xl gap-2 font-light tracking-wide m-0 pointer-events-auto">
+                <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 animate-pulse" />
                 AI Recommendation
               </SheetTitle>
+              <SheetDescription className="sr-only">
+                AI Broker Interface for PSX Stock Analysis and Recommendation.
+              </SheetDescription>
               <SheetClose asChild className="pointer-events-auto z-50 relative">
-                <Button variant="ghost" size="icon" className="group rounded-full bg-background/50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/5 hover:border-rose-500/30 transition-all">
+                <Button variant="ghost" size="icon" className="group rounded-full bg-background/50 hover:bg-rose-500/20 text-muted-foreground hover:text-rose-400 border border-border/50 hover:border-rose-500/30 transition-all">
                   <X className="w-5 h-5 transition-transform group-hover:rotate-90" />
                   <span className="sr-only">Close Terminal</span>
                 </Button>
@@ -240,10 +246,10 @@ export const AIAnalystSheet = () => {
                 </div>
                 
                 <div className="max-w-md space-y-3">
-                  <p className="text-lg sm:text-xl text-slate-100 font-bold tracking-tight relative z-10">
+                  <p className="text-lg sm:text-xl text-foreground font-black tracking-tight relative z-10">
                     Your Personal AI Broker
                   </p>
-                  <p className="text-sm text-slate-400 font-light leading-relaxed relative z-10">
+                  <p className="text-sm text-foreground/80 font-medium leading-relaxed relative z-10">
                     Type a question below to chat with your broker, or select a PSX asset (e.g., HUBC) for a deep dive analysis.
                   </p>
                 </div>
@@ -258,9 +264,9 @@ export const AIAnalystSheet = () => {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[85%] sm:max-w-[80%] text-sm leading-relaxed ${msg.role === 'user'
-                      ? 'px-4 py-2.5 rounded-3xl rounded-br-sm bg-emerald-500/20 border border-emerald-500/30 text-emerald-50 backdrop-blur-md shadow-[0_4px_20px_rgba(16,185,129,0.1)]'
-                      : 'p-3.5 sm:p-4 rounded-2xl rounded-bl-sm bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 text-slate-200 shadow-[0_8px_30px_rgb(0,0,0,0.2)]'
+                    className={`max-w-[92%] sm:max-w-[80%] text-sm leading-relaxed break-words overflow-wrap-anywhere ${msg.role === 'user'
+                      ? 'px-4 py-2.5 rounded-3xl rounded-br-sm bg-emerald-500/20 border border-emerald-500/30 text-emerald-900 dark:text-emerald-50 backdrop-blur-md shadow-[0_4px_20px_rgba(16,185,129,0.1)]'
+                      : 'p-3.5 sm:p-4 rounded-2xl rounded-bl-sm bg-secondary/30 dark:bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 text-foreground shadow-[0_8px_30px_rgb(0,0,0,0.1)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)]'
                       }`}
                   >
                     {msg.role === 'ai' && (
@@ -270,7 +276,7 @@ export const AIAnalystSheet = () => {
                     )}
 
                     {msg.role === 'ai' ? (
-                      <div className="text-[13px] sm:text-sm text-slate-300 leading-relaxed font-sans [&>p]:mb-5 [&>ul]:mb-5 [&>ul]:space-y-3 [&>ul]:list-none [&>ol]:mb-5 [&>ol]:space-y-3 [&>ol]:list-decimal [&>ol]:pl-5 [&_ul>li]:flex [&_ul>li]:items-start [&_ul>li]:gap-2.5 [&_ul>li::before]:content-['▹'] [&_ul>li::before]:text-emerald-500 [&_ul>li::before]:mt-[1px] [&_ul>li::before]:text-base [&_ol>li]:list-item [&_strong]:font-semibold [&_strong]:text-slate-100 [&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-slate-50 [&_h2]:mt-8 [&_h2]:mb-4 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-slate-50 [&_h3]:mt-7 [&_h3]:mb-3 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-emerald-400 [&_h3]:uppercase [&_h3]:tracking-wider">
+                      <div className="text-[13px] sm:text-sm text-foreground/90 leading-relaxed font-sans [&>p]:mb-5 [&>ul]:mb-5 [&>ul]:space-y-3 [&>ul]:list-none [&>ol]:mb-5 [&>ol]:space-y-3 [&>ol]:list-decimal [&>ol]:pl-5 [&_ul>li]:relative [&_ul>li]:pl-6 [&_ul>li]:mb-4 [&_ul>li::before]:content-['▹'] [&_ul>li::before]:absolute [&_ul>li::before]:left-0 [&_ul>li::before]:top-0 [&_ul>li::before]:text-emerald-500 [&_ul>li::before]:text-base [&_ul>li::before]:text-base [&_ol>li]:list-item [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-foreground [&_h2]:mt-8 [&_h2]:mb-4 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-foreground [&_h3]:mt-7 [&_h3]:mb-3 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-emerald-500 [&_h3]:uppercase [&_h3]:tracking-wider">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
@@ -292,12 +298,12 @@ export const AIAnalystSheet = () => {
             {/* Typing Indicator */}
             {isAnalyzing && (
               <div className="flex justify-start">
-                <div className="bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 rounded-2xl rounded-bl-sm p-4 shadow-xl">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs uppercase tracking-wider font-bold">
+                <div className="bg-secondary/30 dark:bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 rounded-2xl rounded-bl-sm p-4 shadow-xl max-w-[92%] sm:max-w-none">
+                  <div className="flex items-center gap-2 text-emerald-500 dark:text-emerald-400 text-xs uppercase tracking-wider font-bold">
                     <Sparkles className="w-3 h-3" /> AI
                   </div>
-                  <div className="flex items-center gap-2 mt-2 text-slate-400 text-sm">
-                    <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <div className="flex items-center gap-2 mt-2 text-muted-foreground text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin text-emerald-500 dark:text-emerald-400" />
                     <span>Analyzing...</span>
                   </div>
                 </div>
@@ -309,8 +315,8 @@ export const AIAnalystSheet = () => {
           </div>
 
           {/* Fixed Input Area at Bottom */}
-          <div className="px-4 py-3 sm:px-6 sm:py-4 bg-black/40 backdrop-blur-xl shrink-0 relative z-30">
-            <div className="w-full max-w-6xl mx-auto flex flex-col gap-3">
+          <div className="px-3 py-2 sm:px-6 sm:py-4 bg-background/80 dark:bg-black/40 backdrop-blur-xl shrink-0 relative z-30 border-t border-border/10">
+            <div className="w-full max-w-6xl mx-auto flex flex-col gap-2 sm:gap-3">
 
               {/* 4. Polished Query Pills (Larger & More Prominent) */}
               <div className="flex overflow-x-auto gap-3 pb-1 hide-scroll">
@@ -320,16 +326,16 @@ export const AIAnalystSheet = () => {
                     whileHover={{ scale: 1.05, y: -2 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setQuestion(tile.query)}
-                    className="shrink-0 flex items-center gap-2.5 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 text-xs sm:text-sm font-semibold text-slate-200 hover:bg-emerald-500/20 hover:border-emerald-500/40 hover:text-emerald-300 hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all duration-300 cursor-pointer group"
+                    className="shrink-0 flex items-center gap-1.5 sm:gap-2.5 px-3 py-2 sm:px-5 sm:py-3 rounded-2xl bg-muted/40 backdrop-blur-md border border-border/40 text-[10px] sm:text-sm font-bold text-emerald-800 dark:text-emerald-50 hover:bg-emerald-500/20 hover:border-emerald-500/40 hover:text-emerald-600 dark:hover:text-emerald-300 hover:shadow-[0_0_20px_rgba(16,185,129,0.1)] transition-all duration-300 cursor-pointer group"
                   >
-                    <tile.icon className="w-4 h-4 text-emerald-500/70 group-hover:text-emerald-400 transition-colors" />
+                    <tile.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 dark:text-emerald-500/70 group-hover:text-emerald-500 transition-colors" />
                     {tile.label}
                   </motion.button>
                 ))}
               </div>
 
               {/* 3. "Frosted Glass" Input Container */}
-              <div className="bg-black/20 backdrop-blur-2xl border-none rounded-3xl p-2 shadow-[0_8px_32px_0_rgba(16,185,129,0.1)] focus-within:shadow-[0_8px_32px_0_rgba(16,185,129,0.2)] transition-all duration-500 flex flex-col gap-1 relative">
+              <div className="bg-secondary/40 dark:bg-black/20 backdrop-blur-2xl border border-border/10 rounded-3xl p-2 shadow-[0_8px_32px_0_rgba(16,185,129,0.05)] dark:shadow-[0_8px_32px_0_rgba(16,185,129,0.1)] focus-within:shadow-[0_8px_32px_0_rgba(16,185,129,0.2)] transition-all duration-500 flex flex-col gap-1 relative">
 
                 {/* Subtle inner shine */}
                 <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent pointer-events-none rounded-3xl"></div>
@@ -338,8 +344,8 @@ export const AIAnalystSheet = () => {
                 <div className="flex flex-wrap items-center gap-2 px-3 pt-2 relative z-10">
 
                   {/* 5. Popped Asset Badge / Input Hybrid */}
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-xs font-mono text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)] relative w-[200px] focus-within:bg-emerald-500/30 focus-within:border-emerald-400 transition-all">
-                    <span className="opacity-70 text-[10px] font-bold tracking-widest pointer-events-none">SYMBOL</span>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 border border-emerald-500/30 dark:border-emerald-500/40 text-xs font-mono text-emerald-800 dark:text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.05)] dark:shadow-[0_0_15px_rgba(16,185,129,0.15)] relative w-[200px] focus-within:bg-emerald-500/25 focus-within:border-emerald-500 transition-all">
+                    <span className="opacity-70 text-[10px] font-bold tracking-widest pointer-events-none text-emerald-900/60 dark:text-emerald-500/60">SYMBOL</span>
                     <div className="flex-1 flex items-center gap-1 overflow-hidden">
                       <input
                         type="text"
@@ -351,7 +357,7 @@ export const AIAnalystSheet = () => {
                         }}
                         onFocus={() => setShowSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        className="bg-transparent border-none outline-none h-5 p-0 text-xs font-bold font-mono text-emerald-200 placeholder:text-emerald-500/30 focus:outline-none focus:ring-0 uppercase w-full shadow-none"
+                        className="bg-transparent border-none outline-none h-5 p-0 text-xs font-bold font-mono text-emerald-950 dark:text-emerald-200 placeholder:text-emerald-700/40 dark:placeholder:text-emerald-500/30 focus:outline-none focus:ring-0 uppercase w-full shadow-none"
                       />
                       {symbol && (
                         <button 
@@ -359,7 +365,7 @@ export const AIAnalystSheet = () => {
                             e.stopPropagation();
                             setSymbol("");
                           }}
-                          className="hover:bg-white/10 rounded-full p-0.5 transition-colors"
+                          className="hover:bg-foreground/10 rounded-full p-0.5 transition-colors"
                         >
                           <X className="w-3 h-3 text-emerald-500/60 hover:text-rose-400" />
                         </button>
@@ -382,7 +388,7 @@ export const AIAnalystSheet = () => {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 10 }}
-                          className="absolute z-[100] left-0 bottom-full mb-2 w-[250px] bg-background/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-[0_0_30px_rgba(16,185,129,0.2)] max-h-[300px] overflow-y-auto hide-scroll"
+                          className="absolute z-[100] left-0 bottom-full mb-2 w-[250px] bg-background dark:bg-background/95 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(16,185,129,0.15)] dark:shadow-[0_0_30px_rgba(16,185,129,0.2)] max-h-[300px] overflow-y-auto hide-scroll"
                         >
                           <div className="py-1">
                             {suggestions.map((s) => (
@@ -394,14 +400,14 @@ export const AIAnalystSheet = () => {
                                   setSymbol(s.symbol);
                                   setShowSuggestions(false);
                                 }}
-                                className="w-full px-3 py-2.5 text-left hover:bg-emerald-500/15 transition-colors flex items-center gap-3 group border-b border-white/5 last:border-0"
+                                className="w-full px-3 py-2.5 text-left hover:bg-emerald-500/10 dark:hover:bg-emerald-500/15 transition-colors flex items-center gap-3 group border-b border-border/40 dark:border-white/5 last:border-0"
                               >
                                 <div className="w-5 h-5 rounded-md border border-emerald-500/30 flex items-center justify-center group-hover:bg-emerald-500/20 group-hover:border-emerald-500/50 transition-all shrink-0">
                                   <Check className="w-3.5 h-3.5 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                                 <div className="flex flex-col flex-1 overflow-hidden">
-                                  <span className="text-xs font-bold font-mono text-emerald-100 group-hover:text-emerald-300 transition-colors">{s.symbol}</span>
-                                  <span className="text-[10px] text-slate-400 uppercase truncate leading-tight">
+                                  <span className="text-xs font-bold font-mono text-emerald-950 dark:text-emerald-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition-colors">{s.symbol}</span>
+                                  <span className="text-[10px] text-muted-foreground dark:text-slate-400 uppercase truncate leading-tight">
                                     {s.name}
                                   </span>
                                 </div>
@@ -419,10 +425,11 @@ export const AIAnalystSheet = () => {
 
                   {/* User Context Badge */}
                   {selectedHolding && currentMarketPrice > 0 && (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] text-slate-300">
-                      <PieChart className="w-3 h-3 text-slate-400" />
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 dark:bg-emerald-500/10 border border-emerald-500/20">
+                      <span className="text-[10px] font-bold text-emerald-700/60 dark:text-emerald-500/60 tracking-wider">SYMBOL</span>
+                      <span className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-tight">{symbol}</span>
                       <span>{selectedHolding.shares} @ {(selectedHolding.average_buy_price || 0).toFixed(0)}</span>
-                      <span className={`font-bold ${(selectedHolding.profit_loss_percent || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span className={`font-bold ${(selectedHolding.profit_loss_percent || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                         ({(selectedHolding.profit_loss_percent || 0) >= 0 ? '+' : ''}{(selectedHolding.profit_loss_percent || 0).toFixed(1)}%)
                       </span>
                     </div>
@@ -441,11 +448,11 @@ export const AIAnalystSheet = () => {
                         handleAnalyze();
                       }
                     }}
-                    className="bg-transparent border-none outline-none ring-0 text-slate-200 focus:outline-none focus:ring-0 placeholder:text-slate-500/70 text-sm h-12 w-full px-3 shadow-none"
+                    className="bg-transparent border-none outline-none ring-0 text-foreground font-semibold focus:outline-none focus:ring-0 placeholder:text-muted-foreground/90 text-sm h-10 sm:h-12 w-full px-3 shadow-none"
                   />
                   <Button
                     size="icon"
-                    className="h-10 w-10 shrink-0 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all data-[disabled]:opacity-50 border border-emerald-500/50"
+                    className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all data-[disabled]:opacity-50 border border-emerald-500/50"
                     onClick={handleAnalyze}
                     disabled={isSubmitDisabled}
                   >
@@ -458,7 +465,7 @@ export const AIAnalystSheet = () => {
                 </div>
               </div>
 
-              <p className="text-[10px] text-slate-500 text-center font-medium tracking-wide">
+              <p className="text-[10px] text-muted-foreground/60 text-center font-medium tracking-wide">
                 Automated Terminal Output — Verify before trading
               </p>
             </div>

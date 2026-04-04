@@ -38,12 +38,17 @@ async def seed_database():
     await db.market_watch.insert_many(baseline_stocks)
 
     # 3. Seed baseline indices
-    print("Seeding market_indices baseline...")
-    baseline_indices = [
-        {"symbol": "KSE100", "value": 151041.64, "change": 450.2, "change_percent": 0.3, "last_updated": datetime.utcnow()},
-        {"symbol": "KSE30", "value": 45230.15, "change": 120.5, "change_percent": 0.27, "last_updated": datetime.utcnow()}
-    ]
-    await db.market_indices.insert_many(baseline_indices)
+    print("Checking market_indices baseline...")
+    existing_indices = await db.market_indices.count_documents({})
+    if existing_indices == 0:
+        print("Seeding market_indices baseline...")
+        baseline_indices = [
+            {"symbol": "KSE100", "value": 151041.64, "change": 450.2, "change_percent": 0.3, "last_updated": datetime.utcnow()},
+            {"symbol": "KSE30", "value": 45230.15, "change": 120.5, "change_percent": 0.27, "last_updated": datetime.utcnow()}
+        ]
+        await db.market_indices.insert_many(baseline_indices)
+    else:
+        print("=> INFO: market_indices already seeded. Skipping baseline reset.")
 
     print("--- [ DATABASE SEEDED SUCCESSFULLY ] ---")
     client.close()

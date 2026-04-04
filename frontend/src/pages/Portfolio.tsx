@@ -184,8 +184,8 @@ export default function Portfolio() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div>
-                <h1 className="text-index font-semibold">My Portfolio</h1>
-                <p className="text-label text-muted-foreground">Tap a tile to view detailed breakdown</p>
+                <h1 className="text-2xl md:text-3xl font-extrabold text-text-primary tracking-tight">My Portfolio</h1>
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">Tap a tile to view detailed breakdown</p>
               </div>
               {isLoading && <Loader2 className="w-5 h-5 animate-spin text-primary/40" />}
             </div>
@@ -201,36 +201,36 @@ export default function Portfolio() {
           {/* --- [ NEW ] | Portfolio Summary Grid --- */}
           {holdings.length > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 my-6">
-              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Wallet className="w-4 h-4 text-primary/70" />
-                  <span className="text-label font-medium uppercase tracking-wider">Total Investment</span>
+              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                <div className="flex items-center gap-2 text-text-secondary">
+                  <Wallet className="w-4 h-4 text-primary" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Total Investment</span>
                 </div>
-                <span className="text-base md:text-xl font-bold font-mono-tabular">{formatPKR(summary.cost)}</span>
+                <span className="text-base md:text-xl font-bold font-mono-tabular text-text-primary">{formatPKR(summary.cost)}</span>
               </div>
 
-              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Briefcase className="w-4 h-4 text-primary/70" />
-                  <span className="text-label font-medium uppercase tracking-wider">Current Value</span>
+              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                <div className="flex items-center gap-2 text-text-secondary">
+                  <Briefcase className="w-4 h-4 text-primary" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Current Value</span>
                 </div>
                 <span className="text-base md:text-xl font-bold font-mono-tabular text-primary">{formatPKR(summary.value)}</span>
               </div>
 
-              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Activity className="w-4 h-4 text-primary/70" />
-                  <span className="text-label font-medium uppercase tracking-wider">Total P&L</span>
+              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                <div className="flex items-center gap-2 text-text-secondary">
+                  <Activity className="w-4 h-4 text-primary" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Total P&L</span>
                 </div>
                 <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
                   {isTotalPositive ? '+' : ''}{formatPKR(summary.pl)}
                 </span>
               </div>
 
-              <div className="glass rounded-xl p-4 flex flex-col gap-1.5 border border-white/5">
-                <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                <div className="flex items-center gap-2 text-text-secondary">
                   {isTotalPositive ? <TrendingUp className="w-4 h-4 text-psx-green" /> : <TrendingDown className="w-4 h-4 text-psx-red" />}
-                  <span className="text-label font-medium uppercase tracking-wider">Overall Return</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Overall Return</span>
                 </div>
                 <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
                   {isTotalPositive ? '▲' : '▼'} {Math.abs(summary.plPercent).toFixed(2)}%
@@ -501,21 +501,19 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
     if (!isInTop50) {
       try {
         const token = await getToken();
-        // Fetch the master list of all live stocks from your FastAPI backend
-        const res = await fetch('/api/market/watch', {
+        // Efficient verify call (new endpoint)
+        const res = await fetch(`/api/market/verify/${upperSymbol}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!res.ok) throw new Error('Network response was not ok');
+        if (!res.ok) throw new Error('Verification failed');
 
-        const marketData = await res.json();
-        const isValidSymbol = marketData.some((s: any) => s.symbol === upperSymbol);
-
-        if (!isValidSymbol) {
-          setError(`Error: Please enter a valid PSX symbol. '${upperSymbol}' does not exist on the exchange.`);
+        const { exists } = await res.json();
+        if (!exists) {
+          setError(`Error: Symbol '${upperSymbol}' not found on PSX.`);
           return; 
         }
       } catch (err) {
-        setError("Unable to verify symbol right now. Please check your connection.");
+        setError("Unable to verify symbol right now.");
         return;
       }
     }

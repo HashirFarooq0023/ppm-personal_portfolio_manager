@@ -77,20 +77,27 @@ async def get_market_watch() -> List[MarketWatch]:
     stocks = await cursor.to_list(length=1000) 
     return [MarketWatch(**s) for s in stocks]
 
-async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
-    cursor = db.market_history.find({"symbol": symbol.upper()}).sort("time", -1).limit(limit)
-    history = await cursor.to_list(length=limit)
-    # Convert to format suitable for lightweight-charts: {time: number, value: number}
-    # Ensure unique timestamps by keeping the latest value per second
-    temp_map = {}
-    for h in reversed(history):
-        ts = int(h["time"].timestamp())
-        temp_map[ts] = h["value"]
+from datetime import datetime, timedelta
+
+async def get_index_history(symbol: str, days: int = 30) -> List[dict]:
+    """Fetches historical market data points starting from 'days' ago to now."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
     
-    # Return as sorted list of points
+    # Query: Filter by symbol and time >= cutoff, sort by time ascending (1)
+    # We use a 5000 point upper bound to prevent extreme memory usage.
+    cursor = db.market_history.find({
+        "symbol": symbol.upper(),
+        "time": {"$gte": cutoff}
+    }).sort("time", 1).limit(5000)
+    
+    history = await cursor.to_list(length=5000)
+    
+    # Convert to format suitable for lightweight-charts: {time: number, value: number}
+    # We ensure unique timestamps by using a map-keyed approach if necessary, 
+    # but the backfill data is already daily-clean.
     return [
-        {"time": ts, "value": val} 
-        for ts, val in sorted(temp_map.items())
+        {"time": int(h["time"].timestamp()), "value": h["value"]} 
+        for h in history
     ]
 async def get_sector_performance() -> list[SectorPerformance]:
     """Aggregates individual stock data into sector performance metrics using MongoDB."""
@@ -218,13 +225,22 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": {"$in": [False, None]}})
     items = await cursor.to_list(length=100)
     
+    if not items:
+        return PortfolioSummary(items=[], total_cost=0, total_value=0, total_profit_loss=0, total_profit_loss_percent=0)
+
+    # 1. Bulk Fetch Market Data
+    symbols = [item['symbol'] for item in items]
+    market_cursor = db.market_watch.find({"symbol": {"$in": symbols}})
+    market_docs = await market_cursor.to_list(length=len(symbols))
+    market_map = {doc['symbol']: doc for doc in market_docs}
+    
     response_items = []
     total_cost = 0.0
     total_value = 0.0
     
     for item in items:
-        # Fetch live price
-        market_data = await db.market_watch.find_one({"symbol": item['symbol']})
+        # Get live price from our pre-fetched map
+        market_data = market_map.get(item['symbol'])
         current_price = market_data['current_price'] if market_data else item['average_buy_price']
         
         cost = item['shares'] * item['average_buy_price']
@@ -235,24 +251,23 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         total_cost += cost
         total_value += value
         
-        # Backfill `transaction_id` for older rows so the UI can delete individual transactions.
+        # Normalize transactions (backfill IDs if missing)
         raw_transactions = item.get("transactions", []) or []
-        txns_changed = False
         normalized_transactions = []
+        needs_update = False
+        
         for t in raw_transactions:
-            if t.get("transaction_id"):
-                normalized_transactions.append(t)
-                continue
-            # Create a new id only when missing.
-            t["transaction_id"] = str(uuid4())
-            txns_changed = True
+            if not t.get("transaction_id"):
+                t["transaction_id"] = str(uuid4())
+                needs_update = True
             normalized_transactions.append(t)
 
-        if txns_changed:
-            await db.portfolio.update_one(
+        # Batch update if IDs were added (Legacy support)
+        if needs_update:
+            asyncio.create_task(db.portfolio.update_one(
                 {"_id": item["_id"]},
-                {"$set": {"transactions": normalized_transactions}},
-            )
+                {"$set": {"transactions": normalized_transactions}}
+            ))
 
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],

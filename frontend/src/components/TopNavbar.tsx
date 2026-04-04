@@ -9,14 +9,14 @@ export default function TopNavbar() {
   return (
     <header className="h-16 md:h-20 flex items-center px-6 gap-4 glass-strong border-b border-border/10 bg-background/50 backdrop-blur-md relative z-50">
       <div className="flex items-center gap-2">
-        <div className="w-2.5 h-2.5 rounded-full bg-psx-green shadow-[0_0_10px_#10B981]" />
-        <span className="text-xl md:text-3xl font-bold tracking-wider text-foreground">PPM</span>
-        <span className="text-xs text-muted-foreground ml-2 mt-2 tracking-widest hidden sm:inline">AI BASED</span>
+        <div className="w-3 h-3 rounded-full bg-psx-green shadow-[0_0_12px_rgba(5,150,105,0.4)]" />
+        <span className="text-xl md:text-3xl font-extrabold tracking-tighter text-text-primary">PPM</span>
+        <span className="text-[10px] text-text-secondary font-bold ml-2 mt-2 tracking-[0.2em] hidden sm:inline">AI BASED</span>
       </div>
 
       {/* NEW: The Revolving Quote Strip */}
-      <div className="flex-1 max-w-2xl mx-8 overflow-hidden relative glass rounded-full px-4 py-2 hidden lg:block h-10">
-        <div className="flex flex-nowrap animate-marquee w-max text-label text-psx-green/80 font-mono whitespace-nowrap items-center h-full">
+      <div className="flex-1 max-w-2xl mx-8 overflow-hidden relative glass-strong rounded-full px-4 py-2 hidden lg:block h-10 border-psx-green/20">
+        <div className="flex flex-nowrap animate-marquee w-max text-label text-psx-green font-mono whitespace-nowrap items-center h-full font-bold">
           <div className="flex flex-nowrap shrink-0 items-center">
             <span className="mx-8">"    The stock market is a device for transferring money from the impatient to the patient." - Warren Buffett</span>
             <span className="mx-8">"    Risk comes from not knowing what you are doing." - Warren Buffett</span>

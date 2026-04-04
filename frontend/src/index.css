@@ -6,57 +6,62 @@
 
 @layer base {
   :root {
-    --background: 215 15% 97%;
-    --foreground: 215 15% 25%;
+    /* High-Contrast Premium Background */
+    --background: 45 33% 99%; 
+    --foreground: 222 47% 6%; /* Deepest Black-Navy for Prominence */
 
-    --card: 0 0% 100% / 0.45;
-    --card-foreground: 215 15% 20%;
+    /* Sharp Defined Glass Panels */
+    --card: 0 0% 100% / 0.9;
+    --card-foreground: 222 47% 6%;
 
-    --popover: 0 0% 100% / 0.6;
-    --popover-foreground: 215 15% 20%;
+    --popover: 0 0% 100% / 1;
+    --popover-foreground: 222 47% 6%;
 
-    --primary: 152 38% 40%;
+    --primary: 161 94% 28%; /* Deeper Emerald */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 215 10% 92%;
-    --secondary-foreground: 215 15% 35%;
+    --secondary: 45 33% 94%;
+    --secondary-foreground: 222 47% 10%;
 
-    --muted: 215 10% 92%;
-    --muted-foreground: 215 10% 55%;
+    --muted: 45 20% 92%;
+    --muted-foreground: 215 16% 30%; /* Darker Muted Text */
 
-    --accent: 215 10% 94%;
-    --accent-foreground: 215 15% 35%;
+    --accent: 45 33% 92%;
+    --accent-foreground: 222 47% 10%;
 
-    --destructive: 0 50% 58%;
+    --destructive: 0 84.2% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 215 10% 88%;
-    --input: 215 10% 90%;
-    --ring: 152 38% 40%;
+    --border: 214.3 31.8% 78%; /* Sharper Borders */
+    --input: 214.3 31.8% 78%;
+    --ring: 161 94% 28%;
 
     --radius: 0.75rem;
 
-    --surface: 0 0% 100% / 0.3;
-    --surface-hover: 0 0% 100% / 0.5;
-    --psx-green: 152 38% 40%;
-    --psx-red: 0 45% 58%;
-    --text-primary: 215 15% 20%;
-    --text-secondary: 215 10% 55%;
-    --text-muted: 215 10% 70%;
-    --border-subtle: 215 10% 90%;
+    --surface: 0 0% 100% / 1;
+    --surface-hover: 0 0% 100% / 0.95;
+    
+    /* Prominent Market Colors */
+    --psx-green: 161 94% 28%;
+    --psx-red: 0 84.2% 45%;
+    
+    --text-primary: 222 47% 6%;
+    --text-secondary: 215 16% 30%;
+    --text-muted: 215 16% 45%;
+    --border-subtle: 214.3 31.8% 85%;
 
-    --glass-bg: 0 0% 100% / 0.35;
-    --glass-border: 0 0% 100% / 0.4;
-    --glass-blur: 24px;
+    --glass-bg: 0 0% 100% / 0.95;
+    --glass-border: 214.3 31.8% 70% / 0.4; /* Prominent Borders with 'Bite' */
+    --glass-blur: 12px;
 
-    --sidebar-background: 0 0% 100% / 0.25;
-    --sidebar-foreground: 215 15% 35%;
-    --sidebar-primary: 152 38% 40%;
+    --sidebar-background: 0 0% 100% / 1;
+    --sidebar-foreground: 222 47% 10%;
+    --sidebar-primary: 161 94% 25%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 215 10% 94%;
-    --sidebar-accent-foreground: 215 15% 35%;
-    --sidebar-border: 215 10% 88%;
-    --sidebar-ring: 152 38% 40%;
+    --sidebar-accent: 161 94% 25% / 0.1;
+    --sidebar-accent-foreground: 161 94% 25%;
+    --sidebar-border: 214.3 31.8% 80%;
+    --sidebar-ring: 161 94% 25%;
   }
 
   .dark {

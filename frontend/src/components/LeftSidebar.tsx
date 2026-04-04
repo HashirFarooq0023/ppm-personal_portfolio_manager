@@ -20,7 +20,7 @@ export default function LeftSidebar() {
               `flex items-center gap-3 px-3 md:px-4 py-3 text-body transition-all duration-300 relative group ${
                 isActive
                   ? 'text-psx-green font-bold'
-                  : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                  : 'text-text-secondary hover:bg-black/5 hover:text-text-primary'
               }`
             }
           >
@@ -57,8 +57,8 @@ export default function LeftSidebar() {
 
       {/* Bottom Section: Full Form Text */}
       <div className="mb-4 px-3 md:px-4 hidden md:block">
-        <div className="h-px w-full bg-border/20 mb-4" /> {/* Subtle divider line */}
-        <p className="text-xs text-muted-foreground uppercase tracking-widest leading-relaxed opacity-50 font-medium">
+        <div className="h-px w-full bg-border/40 mb-4" /> {/* Subtle divider line */}
+        <p className="text-[10px] text-text-muted uppercase tracking-[0.2em] leading-relaxed font-bold">
           Personal<br/>
           Portfolio<br/>
           Manager

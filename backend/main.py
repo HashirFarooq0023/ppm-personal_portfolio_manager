@@ -19,7 +19,7 @@ from service import (
     record_market_snapshot, record_all_portfolios_snapshot,
     ensure_indexes
 )
-from scraper import run_psx_scraper
+from scraper import run_psx_scraper, fetch_psx_data
 
 # --- Lifespan Manager ---
 @asynccontextmanager
@@ -52,8 +52,8 @@ async def run_history_task():
         except Exception as e:
             print(f"[BACKEND] ERROR in history snapshot: {e}")
             
-        print("=> History Task: Sleeping for 1 hour...")
-        await asyncio.sleep(3600)
+        print("=> History Task: Sleeping for 3 hours (10800s)...")
+        await asyncio.sleep(10800)
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -78,19 +78,45 @@ app.add_middleware(
 
 security = HTTPBearer()
 
-# --- Clerk Auth Dependency ---
-def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
+# --- Clerk Auth Configuration ---
+# Your Clerk Frontend API URL (from publishable key)
+CLERK_JWKS_URL = "https://hot-macaw-44.clerk.accounts.dev/.well-known/jwks.json"
+
+# Cache JWKS to avoid fetching it on every request
+_jwks_cache = None
+
+async def get_jwks():
+    global _jwks_cache
+    if not _jwks_cache:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(CLERK_JWKS_URL)
+            resp.raise_for_status()
+            _jwks_cache = resp.json()
+    return _jwks_cache
+
+async def get_current_user(auth: HTTPAuthorizationCredentials = Security(security)):
     token = auth.credentials
     try:
-        # Note: In production, verify against Clerk's PEM public key or JWKS
-        # For this implementation, we decode to extract the 'sub' (clerk_id)
-        payload = jwt.decode(token, "", options={"verify_signature": False})
+        jwks = await get_jwks()
+        # Verify the JWT signature against Clerk's public keys
+        # This is CRITICAL for production security.
+        payload = jwt.decode(
+            token, 
+            jwks, 
+            algorithms=["RS256"],
+            options={"verify_at_hash": False} # Clerk tokens don't always have at_hash
+        )
         clerk_id = payload.get("sub")
         if not clerk_id:
             raise HTTPException(status_code=401, detail="Invalid token - sub missing")
         return clerk_id
     except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid Token: {str(e)}")
+        print(f"[SECURITY] JWT Verification Failed: {e}")
+        raise HTTPException(status_code=401, detail=f"Unauthorized: {str(e)}")
+    except Exception as e:
+        print(f"[ERROR] Unexpected Auth Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error during Authentication")
 
 # --- Endpoints ---
 @app.head("/")
@@ -164,6 +190,14 @@ async def get_watch():
     """Public: Returns all live stock prices."""
     return await get_market_watch()
 
+@app.get("/api/market/verify/{symbol}")
+async def verify_symbol(symbol: str):
+    """Public: Efficiently check if a symbol exists on the PSX."""
+    stocks = await get_market_watch()
+    # Simple check for existence in the current live watch list
+    exists = any(s.symbol == symbol.upper() for s in stocks)
+    return {"exists": exists, "symbol": symbol.upper()}
+
 @app.get("/api/market/overview", response_model=MarketOverview)
 async def get_overview():
     """Public: Returns a consolidated view of the market."""
@@ -173,9 +207,18 @@ async def get_overview():
     return MarketOverview(indices=indices, stocks=stocks, sectors=sectors)
 
 @app.get("/api/market/history/{symbol}")
-async def get_history(symbol: str, limit: int = 100):
+async def get_history(symbol: str, days: int = 30):
     """Public: Returns historical data points for a symbol (index or stock)."""
-    return await get_index_history(symbol, limit)
+    return await get_index_history(symbol, days)
+
+@app.get("/api/market/scrape")
+async def trigger_scrape():
+    """Public Debug: Manually triggers a PSX data fetch."""
+    try:
+        await fetch_psx_data()
+        return {"status": "success", "message": "Manual scrape completed successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/ai/analyze")
 async def analyze_stock(request: AIAnalysisRequest, clerk_id: str = Depends(get_current_user)):
