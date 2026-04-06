@@ -19,7 +19,7 @@ from service import (
     record_market_snapshot, record_all_portfolios_snapshot,
     ensure_indexes
 )
-from scraper import run_psx_scraper, fetch_psx_data
+from scraper import run_psx_scraper, fetch_psx_data, run_global_snapshot_task
 
 # --- Lifespan Manager ---
 @asynccontextmanager
@@ -29,8 +29,8 @@ async def lifespan(app: FastAPI):
     
     # 2. Start the background scraper (5-minute loop)
     scraper_task = asyncio.create_task(run_psx_scraper())
-    # 3. Start the history snapshot task (1-hour loop)
-    history_task = asyncio.create_task(run_history_task())
+    # 3. Start the global market snapshot task (3-hour loop)
+    history_task = asyncio.create_task(run_global_snapshot_task())
     yield
     # Cleanup (cancel tasks)
     scraper_task.cancel()
@@ -41,19 +41,8 @@ async def lifespan(app: FastAPI):
         print("Background tasks cancelled.")
 
 async def run_history_task():
-    """Background worker that records market and portfolio snapshots every hour."""
-    print("[BACKEND] History Snapshot Background Task Started (1-hour loop)")
-    while True:
-        try:
-            # 1. Record Market Snapshot (Stock & Index Prices)
-            await record_market_snapshot()
-            # 2. Record Portfolio Snapshots (User Net Worth)
-            await record_all_portfolios_snapshot()
-        except Exception as e:
-            print(f"[BACKEND] ERROR in history snapshot: {e}")
-            
-        print("=> History Task: Sleeping for 3 hours (10800s)...")
-        await asyncio.sleep(10800)
+    """DEPRECATED: Replaced by run_global_snapshot_task in scraper.py"""
+    pass
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -207,9 +196,9 @@ async def get_overview():
     return MarketOverview(indices=indices, stocks=stocks, sectors=sectors)
 
 @app.get("/api/market/history/{symbol}")
-async def get_history(symbol: str, days: int = 30):
+async def get_history(symbol: str, limit: int = 100):
     """Public: Returns historical data points for a symbol (index or stock)."""
-    return await get_index_history(symbol, days)
+    return await get_index_history(symbol, limit)
 
 @app.get("/api/market/scrape")
 async def trigger_scrape():

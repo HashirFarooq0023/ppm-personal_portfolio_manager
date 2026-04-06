@@ -3,10 +3,11 @@ import httpx
 import traceback
 import re
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from service import upsert_market_indices, upsert_market_watch, db
 from models import MarketIndex, MarketWatch
+from fixed_symbols import FIXED_SYMBOLS
 
 # The PSX Data Portal (DPS) Market Watch URL - much more reliable for real-time tickers
 PSX_DATA_PORTAL_URL = "https://dps.psx.com.pk/market-watch"
@@ -127,6 +128,9 @@ async def fetch_psx_data():
                     change = current - ldcp
                     change_percent = (change / ldcp * 100) if ldcp > 0 else 0.0
 
+                    if scrip not in FIXED_SYMBOLS:
+                        continue
+
                     stocks.append(MarketWatch(
                         symbol=scrip,
                         current_price=current,
@@ -134,8 +138,8 @@ async def fetch_psx_data():
                         volume=volume,
                         high=high,
                         low=low,
-                        sector=sector.upper(), # Consistent casing
-                        last_updated=datetime.utcnow()
+                        sector=sector.upper(),
+                        last_updated=datetime.now(timezone.utc)
                     ))
                 except Exception:
                     continue
@@ -143,9 +147,13 @@ async def fetch_psx_data():
             # 4. Save to Database
             if stocks:
                 await upsert_market_watch(stocks)
-                print(f"=> INFO: Successfully fetched and updated {len(stocks)} stocks from PSX Data Portal")
+                
+                # Cleanup: remove symbols from market_watch that are not in FIXED_SYMBOLS
+                await db.market_watch.delete_many({"symbol": {"$nin": list(FIXED_SYMBOLS)}})
+                
+                print(f"=> INFO: Successfully fetched and updated {len(stocks)} fixed stocks from PSX Data Portal")
             else:
-                print("=> Scraper Warning: No stocks were parsed accurately.")
+                print("=> Scraper Warning: No static stocks were parsed accurately.")
 
             # --- Dynamic Mock Indices Logic ---
             for sym, base in [("KSE100", 151041.64), ("KSE30", 45230.15)]:
@@ -163,7 +171,7 @@ async def fetch_psx_data():
                     value=new_val,
                     change=change,
                     change_percent=change_percent,
-                    last_updated=datetime.utcnow()
+                    last_updated=datetime.now(timezone.utc)
                 )
                 await upsert_market_indices([idx_data])
                 
@@ -171,12 +179,68 @@ async def fetch_psx_data():
                 await db.market_history.insert_one({
                     "symbol": sym,
                     "value": new_val,
-                    "time": datetime.utcnow()
+                    "time": datetime.now(timezone.utc)
                 })
             
         except Exception as e:
             print(f"=> Scraper Error: {e}")
             raise e # Reraise for the retry loop
+
+async def get_curated_symbols():
+    """Since fetch_psx_data now rigorously filters market_watch to the Top 20x10,
+    we simply snapshot everything currently in market_watch and the indices."""
+    try:
+        snapshot_data = []
+
+        # Get current index prices
+        indices = await db.market_indices.find().to_list(length=10)
+        for idx in indices:
+            snapshot_data.append({"symbol": idx["symbol"], "value": idx["value"]})
+
+        # Get all actively curated stocks
+        stocks = await db.market_watch.find().to_list(length=500)
+        for s in stocks:
+            snapshot_data.append({"symbol": s["symbol"], "value": s["current_price"]})
+        
+        return snapshot_data
+    except Exception as e:
+        print(f"[!] Error pulling curated symbols: {e}")
+        return []
+
+async def run_global_snapshot_task():
+    """
+    Background task that records the state of top market symbols every 3 hours.
+    This provides high-density intraday data for charts.
+    """
+    print("[BACKEND] Global Snapshot Task Started (3-hour loop)")
+    while True:
+        try:
+            print(f"[SNAPSHOT] {datetime.utcnow().isoformat()} - Capturing curated market state...")
+            
+            # Identify and capture Top 20x20 symbols
+            snapshots = await get_curated_symbols()
+            
+            if snapshots:
+                from pymongo import InsertOne
+                now = datetime.now(timezone.utc)
+                ops = [
+                    InsertOne({
+                        "symbol": s["symbol"],
+                        "value": s["value"],
+                        "time": now
+                    }) for s in snapshots
+                ]
+                
+                await db.market_history.bulk_write(ops, ordered=False)
+                print(f"=> SUCCESS: Recorded {len(ops)} snapshots to market_history.")
+            else:
+                print("=> WARNING: No snapshots captured (db empty or query failed).")
+                
+        except Exception as e:
+            print(f"=> Snapshot Task Error: {e}")
+            traceback.print_exc()
+            
+        await asyncio.sleep(1800) # 30 minutes (Ideal for PSX intraday granularity)
 
 async def run_psx_scraper():
     """Background task with robust error handling and backoff."""
@@ -186,7 +250,7 @@ async def run_psx_scraper():
         try:
             await fetch_psx_data()
             fail_count = 0 # Reset on success
-            await asyncio.sleep(300) # 5 minutes
+            await asyncio.sleep(1800) # 30 minutes
         except Exception as e:
             fail_count += 1
             # Exponential backoff: 30s, 60s, 120s... max 10 mins

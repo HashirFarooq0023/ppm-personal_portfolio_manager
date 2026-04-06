@@ -1,7 +1,8 @@
+import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import UpdateOne, IndexModel, ASCENDING, DESCENDING
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import uuid4
 from dotenv import load_dotenv
@@ -77,27 +78,20 @@ async def get_market_watch() -> List[MarketWatch]:
     stocks = await cursor.to_list(length=1000) 
     return [MarketWatch(**s) for s in stocks]
 
-from datetime import datetime, timedelta
-
-async def get_index_history(symbol: str, days: int = 30) -> List[dict]:
-    """Fetches historical market data points starting from 'days' ago to now."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    
-    # Query: Filter by symbol and time >= cutoff, sort by time ascending (1)
-    # We use a 5000 point upper bound to prevent extreme memory usage.
-    cursor = db.market_history.find({
-        "symbol": symbol.upper(),
-        "time": {"$gte": cutoff}
-    }).sort("time", 1).limit(5000)
-    
-    history = await cursor.to_list(length=5000)
-    
+async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
+    cursor = db.market_history.find({"symbol": symbol.upper()}).sort("time", -1).limit(limit)
+    history = await cursor.to_list(length=limit)
     # Convert to format suitable for lightweight-charts: {time: number, value: number}
-    # We ensure unique timestamps by using a map-keyed approach if necessary, 
-    # but the backfill data is already daily-clean.
+    # Ensure unique timestamps by keeping the latest value per second
+    temp_map = {}
+    for h in reversed(history):
+        ts = int(h["time"].timestamp())
+        temp_map[ts] = h["value"]
+    
+    # Return as sorted list of points
     return [
-        {"time": int(h["time"].timestamp()), "value": h["value"]} 
-        for h in history
+        {"time": ts, "value": val} 
+        for ts, val in sorted(temp_map.items())
     ]
 async def get_sector_performance() -> list[SectorPerformance]:
     """Aggregates individual stock data into sector performance metrics using MongoDB."""
@@ -166,7 +160,7 @@ async def upsert_market_watch(stocks: List[MarketWatch]):
 async def record_market_snapshot():
     """Captures a full historical snapshot of indices and all stocks."""
     print("[BACKEND] Recording Market History Snapshot...")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # 1. Snapshot Indices
     indices = await db.market_indices.find().to_list(length=10)
@@ -197,7 +191,7 @@ async def record_all_portfolios_snapshot():
     # 1. Get all unique users who have at least one holding
     clerk_ids = await db.portfolio.distinct("clerk_id")
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     snapshots_taken = 0
     
     for cid in clerk_ids:

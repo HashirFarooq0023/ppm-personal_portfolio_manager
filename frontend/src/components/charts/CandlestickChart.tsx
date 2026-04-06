@@ -33,23 +33,11 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
         vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
         horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
       },
-      rightPriceScale: { 
-        borderVisible: false,
-        alignLabels: true,
-      },
-      timeScale: { 
-        borderVisible: false,
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-        barSpacing: 10,
-        rightOffset: 12,
-        fixLeftEdge: true,
-        fixRightEdge: true,
-      },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false },
       crosshair: {
-        vertLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3, labelVisible: true },
-        horzLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3, labelVisible: true },
+        vertLine: { color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)', width: 1, style: 3, labelVisible: false },
+        horzLine: { color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)', width: 1, style: 3 },
       },
     });
 
@@ -62,7 +50,7 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
       wickDownColor: isDark ? 'hsl(0, 84%, 65%)' : 'hsl(0, 84%, 60%)',
     });
 
-    // 1. Sort and ensure unique timestamps
+    // Ensure data is strictly sorted and unique by time for lightweight-charts
     const uniqueData = Array.from(
       memoData.reduce((map, item) => {
         const ts = typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
@@ -71,22 +59,16 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
       }, new Map<number, any>()).values()
     ).sort((a, b) => a.time - b.time);
 
-    // 2. [ NEW ] The Weekend/Night Gap Killer
-    const filteredData = uniqueData.filter((item, index, array) => {
-      if (index === 0) return true; // Always keep the first point
-      const prev = array[index - 1];
-      
-      // Only keep the candle if the price actually moved
-      return (
-        item.open !== prev.open ||
-        item.high !== prev.high ||
-        item.low !== prev.low ||
-        item.close !== prev.close
-      );
-    });
+    // Filter out consecutive duplicate candlesticks to prevent flat lines during weekends/nights
+    const transitionsOnly = uniqueData.filter((p, i, arr) => 
+      i === 0 || 
+      p.open !== arr[i - 1].open || 
+      p.high !== arr[i - 1].high || 
+      p.low !== arr[i - 1].low || 
+      p.close !== arr[i - 1].close
+    );
 
-    // 3. Set the filtered data
-    series.setData(filteredData as any);
+    series.setData(transitionsOnly as any);
     chart.timeScale().fitContent();
     chartRef.current = chart;
 

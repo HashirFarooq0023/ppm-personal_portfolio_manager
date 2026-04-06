@@ -1,7 +1,7 @@
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Load .env from the same directory as this file

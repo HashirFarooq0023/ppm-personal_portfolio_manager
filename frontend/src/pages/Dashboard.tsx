@@ -42,22 +42,21 @@ export default function Dashboard() {
     refetchInterval: 10000,
   });
 
-  const { data: indexHistory, isLoading: isHistoryLoading } = useQuery({
+  const { data: indexHistory } = useQuery({
     queryKey: ['indexHistory', 'KSE100', timeRange],
     queryFn: async () => {
-      const daysMap: Record<string, number> = {
-        'Current': 7,   // 7 days
-        '1M': 30,       // 30 days
-        '3M': 90,       // 90 days
-        '1Y': 365,      // 365 days
-        'ALL': 1000     // Roughly all data
+      const limits: Record<string, number> = {
+        'Current': 24,
+        '1M': 30,
+        '3M': 90,
+        '1Y': 365
       };
-      const currentDays = daysMap[timeRange] || 30;
-      const res = await fetch(`/api/market/history/KSE100?days=${currentDays}`);
+      const limit = limits[timeRange] || 100;
+      const res = await fetch(`/api/market/history/KSE100?limit=${limit}`);
       if (!res.ok) return [];
       return res.json();
     },
-    refetchInterval: 60000, // Refresh every minute
+    refetchInterval: 10000,
   });
 
   // Map API data to UI structure, fallback to mock data
@@ -177,14 +176,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex-1 min-h-[480px]">
-             {isHistoryLoading ? (
-               <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                 <p className="text-sm font-medium">Fetching historical KSE-100 snapshots...</p>
-               </div>
-             ) : (
-               <CandlestickChart data={kseData} height={480} />
-             )}
+            <CandlestickChart data={kseData} height={480} />
           </div>
         </div>
 

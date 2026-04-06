@@ -33,23 +33,11 @@ export default function LineChartWidget({ data, color = 'hsl(142, 76%, 36%)', he
         vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
         horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
       },
-      rightPriceScale: { 
-        borderVisible: false,
-        alignLabels: true,
-      },
-      timeScale: { 
-        borderVisible: false,
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-        barSpacing: 10,
-        rightOffset: 12,
-        fixLeftEdge: true,
-        fixRightEdge: true,
-      },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false },
       crosshair: {
-        vertLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3, labelVisible: true },
-        horzLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3, labelVisible: true },
+        vertLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3, labelVisible: false },
+        horzLine: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1, style: 3 },
       },
     });
 
@@ -60,7 +48,7 @@ export default function LineChartWidget({ data, color = 'hsl(142, 76%, 36%)', he
       lineWidth: 2,
     });
 
-    // 1. Sort and ensure unique timestamps
+    // Ensure data is strictly sorted and unique by time for lightweight-charts
     const uniqueData = Array.from(
       memoData.reduce((map, item) => {
         const ts = typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
@@ -69,17 +57,10 @@ export default function LineChartWidget({ data, color = 'hsl(142, 76%, 36%)', he
       }, new Map<number, any>()).values()
     ).sort((a, b) => a.time - b.time);
 
-    // 2. [ NEW ] The Weekend/Night Gap Killer
-    const filteredData = uniqueData.filter((item, index, array) => {
-      if (index === 0) return true;
-      const prev = array[index - 1];
-      
-      // Only keep the point if the value actually changed
-      return item.value !== prev.value;
-    });
+    // Filter out consecutive duplicate prices to prevent flat lines during weekends/nights
+    const transitionsOnly = uniqueData.filter((p, i, arr) => i === 0 || p.value !== arr[i - 1].value);
 
-    // 3. Set the filtered data
-    series.setData(filteredData as any);
+    series.setData(transitionsOnly as any);
     chart.timeScale().fitContent();
     chartRef.current = chart;
 
