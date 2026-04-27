@@ -184,6 +184,8 @@ async def fetch_psx_data():
 
                     stocks.append(MarketWatch(
                         symbol=scrip,
+                        company_name=clean_name,
+                        sector=clean_sector,
                         current_price=current,
                         change_percent=change_percent,
                         volume=volume,
