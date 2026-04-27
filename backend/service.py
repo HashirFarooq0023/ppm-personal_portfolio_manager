@@ -348,6 +348,21 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         # 2. Fetch Transactions from the separate infinite ledger
         txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
         transactions = await txn_cursor.to_list(length=500)
+        
+        # [MIGRATION]: If no ledger txns found, check for legacy embedded ones
+        if not transactions:
+            legacy_txns = item.get("transactions", [])
+            if legacy_txns:
+                # Prepare for migration to standalone collection
+                for t in legacy_txns:
+                    t["clerk_id"] = clerk_id
+                    t["symbol"] = item['symbol']
+                    if not t.get("transaction_id"): t["transaction_id"] = str(uuid4())
+                
+                await db.transactions.insert_many(legacy_txns)
+                transactions = legacy_txns
+                # Clear legacy field to prevent re-migration
+                await db.portfolio.update_one({"_id": item["_id"]}, {"$unset": {"transactions": ""}})
 
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
@@ -543,6 +558,18 @@ async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
         # Fetch Transactions from the separate infinite ledger
         txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
         transactions = await txn_cursor.to_list(length=500)
+
+        # [MIGRATION]: Fallback for older binned items
+        if not transactions:
+            legacy_txns = item.get("transactions", [])
+            if legacy_txns:
+                for t in legacy_txns:
+                    t["clerk_id"] = clerk_id
+                    t["symbol"] = item['symbol']
+                    if not t.get("transaction_id"): t["transaction_id"] = str(uuid4())
+                await db.transactions.insert_many(legacy_txns)
+                transactions = legacy_txns
+                await db.portfolio.update_one({"_id": item["_id"]}, {"$unset": {"transactions": ""}})
 
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
