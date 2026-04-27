@@ -72,6 +72,7 @@ class PortfolioSummary(APIModel):
     total_value: float
     total_profit_loss: float
     total_profit_loss_percent: float
+    total_realized_pl: float = 0.0
 
 class PortfolioHistoryPoint(APIModel):
     clerk_id: str

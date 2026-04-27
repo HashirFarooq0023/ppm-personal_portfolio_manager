@@ -160,10 +160,13 @@ export default function Portfolio() {
   const summary = {
     cost: portfolioData?.totalCost ?? calculatedTotalCost,
     value: portfolioData?.totalValue ?? calculatedTotalValue,
-    pl: portfolioData?.totalProfitLoss ?? calculatedTotalPL,
+    unrealizedPL: portfolioData?.totalProfitLoss ?? calculatedTotalPL,
+    realizedPL: portfolioData?.totalRealizedPL ?? 0,
+    lifetimePL: (portfolioData?.totalProfitLoss ?? calculatedTotalPL) + (portfolioData?.totalRealizedPL ?? 0),
     plPercent: portfolioData?.totalProfitLossPercent ?? calculatedTotalPLPercent
   };
-  const isTotalPositive = summary.pl >= 0;
+  const isUnrealizedPositive = summary.unrealizedPL >= 0;
+  const isLifetimePositive = summary.lifetimePL >= 0;
 
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto scrollbar-thin space-y-4 md:space-y-6 relative">
@@ -202,11 +205,11 @@ export default function Portfolio() {
 
           {/* --- [ NEW ] | Portfolio Summary Grid --- */}
           {holdings.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 my-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 my-6">
               <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
                 <div className="flex items-center gap-2 text-text-secondary">
                   <Wallet className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Total Investment</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Investment</span>
                 </div>
                 <span className="text-base md:text-xl font-bold font-mono-tabular text-text-primary">{formatPKR(summary.cost)}</span>
               </div>
@@ -214,7 +217,7 @@ export default function Portfolio() {
               <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
                 <div className="flex items-center gap-2 text-text-secondary">
                   <Briefcase className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Current Value</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Value</span>
                 </div>
                 <span className="text-base md:text-xl font-bold font-mono-tabular text-primary">{formatPKR(summary.value)}</span>
               </div>
@@ -222,20 +225,30 @@ export default function Portfolio() {
               <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
                 <div className="flex items-center gap-2 text-text-secondary">
                   <Activity className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Total P&L</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Current P&L</span>
                 </div>
-                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
-                  {isTotalPositive ? '+' : ''}{formatPKR(summary.pl)}
+                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isUnrealizedPositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                  {isUnrealizedPositive ? '+' : ''}{formatPKR(summary.unrealizedPL)}
                 </span>
               </div>
 
               <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
                 <div className="flex items-center gap-2 text-text-secondary">
-                  {isTotalPositive ? <TrendingUp className="w-4 h-4 text-psx-green" /> : <TrendingDown className="w-4 h-4 text-psx-red" />}
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Overall Return</span>
+                  <TrendingUp className="w-4 h-4 text-primary" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Lifetime P&L</span>
                 </div>
-                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
-                  {isTotalPositive ? '▲' : '▼'} {Math.abs(summary.plPercent).toFixed(2)}%
+                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isLifetimePositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                  {isLifetimePositive ? '+' : ''}{formatPKR(summary.lifetimePL)}
+                </span>
+              </div>
+
+              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60 hidden md:flex">
+                <div className="flex items-center gap-2 text-text-secondary">
+                  {isLifetimePositive ? <TrendingUp className="w-4 h-4 text-psx-green" /> : <TrendingDown className="w-4 h-4 text-psx-red" />}
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Return %</span>
+                </div>
+                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isLifetimePositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                  {isLifetimePositive ? '▲' : '▼'} {Math.abs(summary.plPercent).toFixed(2)}%
                 </span>
               </div>
             </div>

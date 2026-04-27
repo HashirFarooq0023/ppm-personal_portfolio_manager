@@ -322,6 +322,33 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     if not items:
         return PortfolioSummary(items=[], total_cost=0, total_value=0, total_profit_loss=0, total_profit_loss_percent=0)
 
+    # 0. Calculate Realized P&L from ALL transactions (including sold/binned stocks)
+    all_txn_cursor = db.transactions.find({"clerk_id": clerk_id})
+    all_txns = await all_txn_cursor.to_list(length=2000)
+    
+    realized_pl = 0.0
+    symbol_states = {} # Track avg price over time to calculate gain/loss on sell
+    
+    for t in sorted(all_txns, key=lambda x: x.get('date', datetime.min)):
+        sym = t['symbol']
+        action = t['action']
+        qty = t['shares']
+        price = t['price']
+        
+        state = symbol_states.get(sym, {"shares": 0, "avg": 0.0})
+        
+        if action == "Buy":
+            new_qty = state["shares"] + qty
+            if new_qty > 0:
+                state["avg"] = ((state["shares"] * state["avg"]) + (qty * price)) / new_qty
+                state["shares"] = new_qty
+        else: # Sell
+            # Gain/Loss = qty * (sell_price - avg_buy_price)
+            realized_pl += qty * (price - state["avg"])
+            state["shares"] = max(0, state["shares"] - qty)
+            
+        symbol_states[sym] = state
+
     # 1. Bulk Fetch Market Prices
     symbols = [item['symbol'] for item in items]
     market_cursor = db.market_watch.find({"symbol": {"$in": symbols}})
@@ -329,8 +356,8 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     market_map = {doc['symbol']: doc for doc in market_docs}
     
     response_items = []
-    total_cost = 0.0
-    total_value = 0.0
+    total_unrealized_cost = 0.0
+    total_unrealized_value = 0.0
     
     for item in items:
         # Get live price
@@ -342,8 +369,8 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         pl = value - cost
         pl_pct = (pl / cost * 100) if cost > 0 else 0
         
-        total_cost += cost
-        total_value += value
+        total_unrealized_cost += cost
+        total_unrealized_value += value
         
         # 2. Fetch Transactions from the separate infinite ledger
         txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
@@ -353,15 +380,12 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         if not transactions:
             legacy_txns = item.get("transactions", [])
             if legacy_txns:
-                # Prepare for migration to standalone collection
                 for t in legacy_txns:
                     t["clerk_id"] = clerk_id
                     t["symbol"] = item['symbol']
                     if not t.get("transaction_id"): t["transaction_id"] = str(uuid4())
-                
                 await db.transactions.insert_many(legacy_txns)
                 transactions = legacy_txns
-                # Clear legacy field to prevent re-migration
                 await db.portfolio.update_one({"_id": item["_id"]}, {"$unset": {"transactions": ""}})
 
         response_items.append(PortfolioResponseItem(
@@ -376,15 +400,17 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
             transactions=[Transaction(**t) for t in transactions]
         ))
     
-    total_pl = total_value - total_cost
-    total_pl_pct = (total_pl / total_cost * 100) if total_cost > 0 else 0
+    total_unrealized_pl = total_unrealized_value - total_unrealized_cost
+    total_lifetime_pl = total_unrealized_pl + realized_pl
+    total_pl_pct = (total_lifetime_pl / total_unrealized_cost * 100) if total_unrealized_cost > 0 else 0
     
     return PortfolioSummary(
         items=response_items,
-        total_cost=total_cost,
-        total_value=total_value,
-        total_profit_loss=total_pl,
-        total_profit_loss_percent=total_pl_pct
+        total_cost=total_unrealized_cost,
+        total_value=total_unrealized_value,
+        total_profit_loss=total_unrealized_pl,
+        total_profit_loss_percent=total_pl_pct,
+        total_realized_pl=realized_pl
     )
 
 async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float, reset_history: bool = False):
@@ -656,7 +682,12 @@ async def generate_stock_analysis(clerk_id: str, symbol: Optional[str], question
                     f"- {item.symbol}: {item.shares} shares @ PKR {item.average_buy_price:.2f} "
                     f"(Current: PKR {item.current_price:.2f}, {abs(item.profit_loss_percent):.1f}% {ownership_word})\n"
                 )
-            portfolio_summary += f"\nTotal Value: PKR {portfolio.total_value:,.0f} | P&L: PKR {portfolio.total_profit_loss:,.0f} ({portfolio.total_profit_loss_percent:.1f}%)"
+            portfolio_summary += (
+                f"\nUnrealized P&L (Current): PKR {portfolio.total_profit_loss:,.0f} "
+                f"({portfolio.total_profit_loss_percent:.1f}%)\n"
+                f"Realized P&L (Sales): PKR {portfolio.total_realized_pl:,.0f}\n"
+                f"**Lifetime Total P&L**: PKR {(portfolio.total_profit_loss + portfolio.total_realized_pl):,.0f}"
+            )
         else:
             portfolio_summary = "The user has no stocks in their current active portfolio."
 
