@@ -155,88 +155,56 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
-        {/* KSE-100 Chart */}
-        <div className="lg:col-span-8 glass rounded-xl p-4 flex flex-col">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
-            <div>
-              <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-text-primary">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                KSE-100 Index History
-              </h2>
-              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Market Trend Analysis</span>
-            </div>
-            <div className="flex gap-2">
-              {['Current', '1M', '3M', '1Y'].map(range => (
-                <button 
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  className={`text-[10px] px-2.5 py-1 rounded-md font-bold transition-colors ${
-                    range === timeRange ? 'bg-primary text-primary-foreground' : 'glass hover:bg-surface-hover'
-                  }`}
-                >
-                  {range}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex-1 min-h-[480px]">
-            <CandlestickChart data={kseData} height={480} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+        <div className="glass rounded-xl p-4">
+          <h2 className="text-subheader font-semibold mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-psx-green" />
+            Top Gainers
+          </h2>
+          <div className="space-y-2">
+            {topGainers.map(stock => (
+              <button 
+                key={stock.symbol} 
+                onClick={() => setSelectedStock(stock.symbol)}
+                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <div className="font-bold text-text-primary">{stock.symbol}</div>
+                <div className="text-right">
+                  <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
+                  <div className="text-xs text-psx-green flex items-center justify-end gap-0.5">
+                    <ArrowUpRight className="w-3 h-3" />
+                    +{stock.changePercent.toFixed(2)}%
+                  </div>
+                </div>
+              </button>
+            ))}
+            {topGainers.length === 0 && <div className="text-center text-label text-muted-foreground py-4">Loading gainers...</div>}
           </div>
         </div>
 
-        {/* Top Gainers/Losers - Hidden on mobile */}
-        <div className="hidden lg:block lg:col-span-4 space-y-4">
-          <div className="glass rounded-xl p-4">
-            <h2 className="text-subheader font-semibold mb-3 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-psx-green" />
-              Top Gainers
-            </h2>
-            <div className="space-y-2">
-              {topGainers.map(stock => (
-                <button 
-                  key={stock.symbol} 
-                  onClick={() => setSelectedStock(stock.symbol)}
-                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
-                >
-                  <div className="font-bold text-text-primary">{stock.symbol}</div>
-                  <div className="text-right">
-                    <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
-                    <div className="text-xs text-psx-green flex items-center justify-end gap-0.5">
-                      <ArrowUpRight className="w-3 h-3" />
-                      +{stock.changePercent.toFixed(2)}%
-                    </div>
+        <div className="glass rounded-xl p-4">
+          <h2 className="text-subheader font-semibold mb-3 flex items-center gap-2">
+            <TrendingDown className="w-4 h-4 text-psx-red" />
+            Top Losers
+          </h2>
+          <div className="space-y-2">
+            {topLosers.map(stock => (
+              <button 
+                key={stock.symbol} 
+                onClick={() => setSelectedStock(stock.symbol)}
+                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <div className="font-bold text-text-primary">{stock.symbol}</div>
+                <div className="text-right">
+                  <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
+                  <div className="text-xs text-psx-red flex items-center justify-end gap-0.5">
+                    <ArrowDownRight className="w-3 h-3" />
+                    {stock.changePercent.toFixed(2)}%
                   </div>
-                </button>
-              ))}
-              {topGainers.length === 0 && <div className="text-center text-label text-muted-foreground py-4">Loading gainers...</div>}
-            </div>
-          </div>
-
-          <div className="glass rounded-xl p-4">
-            <h2 className="text-subheader font-semibold mb-3 flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-psx-red" />
-              Top Losers
-            </h2>
-            <div className="space-y-2">
-              {topLosers.map(stock => (
-                <button 
-                  key={stock.symbol} 
-                  onClick={() => setSelectedStock(stock.symbol)}
-                  className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
-                >
-                  <div className="font-bold text-text-primary">{stock.symbol}</div>
-                  <div className="text-right">
-                    <div className="text-sm font-mono-tabular">{formatPKR(stock.currentPrice)}</div>
-                    <div className="text-xs text-psx-red flex items-center justify-end gap-0.5">
-                      <ArrowDownRight className="w-3 h-3" />
-                      {stock.changePercent.toFixed(2)}%
-                    </div>
-                  </div>
-                </button>
-              ))}
-              {topLosers.length === 0 && <div className="text-center text-label text-muted-foreground py-4">Loading losers...</div>}
-            </div>
+                </div>
+              </button>
+            ))}
+            {topLosers.length === 0 && <div className="text-center text-label text-muted-foreground py-4">Loading losers...</div>}
           </div>
         </div>
       </div>
