@@ -142,7 +142,9 @@ export default function Portfolio() {
 
   const [showEmptyBinConfirm, setShowEmptyBinConfirm] = useState(false);
 
-  const selectedHolding = holdings.find((h: any) => h.symbol === selectedSymbol);
+  const selectedHolding = 
+    holdings.find((h: any) => h.symbol === selectedSymbol) || 
+    binItems.find((h: any) => h.symbol === selectedSymbol);
   const selectedTransaction =
     deleteTransactionId && selectedHolding?.transactions
       ? selectedHolding.transactions.find((t: any) => (t.transactionId ?? t.transaction_id) === deleteTransactionId)
@@ -272,13 +274,20 @@ export default function Portfolio() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 opacity-70 grayscale-[0.5] hover:grayscale-0 transition-all">
                 {binItems.map((h: any) => (
-                  <div key={h.symbol} className="glass rounded-xl p-4 flex items-center justify-between group">
+                  <div 
+                    key={h.symbol} 
+                    className="glass rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors"
+                    onClick={() => setSelectedSymbol(h.symbol)}
+                  >
                     <div>
                       <div className="font-semibold">{h.symbol}</div>
                       <div className="text-label text-muted-foreground">Deleted {new Date(h.deletedAt).toLocaleTimeString()}</div>
                     </div>
                     <button
-                      onClick={() => restoreMutation.mutate(h.symbol)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        restoreMutation.mutate(h.symbol);
+                      }}
                       disabled={restoreMutation.isPending}
                       className="p-2 rounded-lg bg-psx-green/10 text-psx-green hover:bg-psx-green/20 transition-colors flex items-center gap-1.5 text-label font-medium"
                     >

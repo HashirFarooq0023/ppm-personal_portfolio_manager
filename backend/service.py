@@ -525,7 +525,7 @@ async def delete_holding(clerk_id: str, symbol: str):
     )
 
 async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
-    """Fetches recently deleted holdings from the bin."""
+    """Fetches recently deleted holdings from the bin with their full transaction history."""
     cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": True})
     items = await cursor.to_list(length=100)
     
@@ -540,23 +540,9 @@ async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
         pl = value - cost
         pl_pct = (pl / cost * 100) if cost > 0 else 0
         
-        # Backfill `transaction_id` for older rows so the UI can delete individual transactions.
-        raw_transactions = item.get("transactions", []) or []
-        txns_changed = False
-        normalized_transactions = []
-        for t in raw_transactions:
-            if t.get("transaction_id"):
-                normalized_transactions.append(t)
-                continue
-            t["transaction_id"] = str(uuid4())
-            txns_changed = True
-            normalized_transactions.append(t)
-
-        if txns_changed:
-            await db.portfolio.update_one(
-                {"_id": item["_id"]},
-                {"$set": {"transactions": normalized_transactions}},
-            )
+        # Fetch Transactions from the separate infinite ledger
+        txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
+        transactions = await txn_cursor.to_list(length=500)
 
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
@@ -567,7 +553,7 @@ async def get_deleted_holdings(clerk_id: str) -> List[PortfolioResponseItem]:
             total_value=value,
             profit_loss=pl,
             profit_loss_percent=pl_pct,
-            transactions=[Transaction(**t) for t in normalized_transactions],
+            transactions=[Transaction(**t) for t in transactions],
             deleted_at=item.get('deleted_at')
         ))
     return response_items
