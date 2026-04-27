@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateCandleData, watchlistStocks, formatPKR, TOP_PSX_SYMBOLS } from '@/data/mockData';
 import CandlestickChart from '@/components/charts/CandlestickChart';
+import { useQuery } from '@tanstack/react-query';
 // --- [ NEW ] | Added Sparkles icon for the AI button ---
 import { ArrowLeft, TrendingUp, TrendingDown, Clock, Activity, Sparkles } from 'lucide-react';
 
@@ -29,9 +30,27 @@ export default function ChartTerminal() {
     return watchlistStocks[0];
   }, [symbol]);
 
-  const candleData = useMemo(() => 
-    generateCandleData(90, stock.price)
-  , [symbol, stock.price]);
+  const { data: chartData, isLoading: isChartLoading } = useQuery({
+    queryKey: ['history', symbol, range],
+    queryFn: async () => {
+      // Map frontend ranges to backend limits
+      const rangeMap: Record<string, number> = {
+        '1D': 48,
+        '1W': 100,
+        '1M': 300,
+        '3M': 900,
+        '1Y': 2000,
+        'ALL': 5000
+      };
+      const limit = rangeMap[range] || 100;
+      const res = await fetch(`/api/market/history/${symbol}?format=candle&limit=${limit}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 60000, // Refresh every minute
+  });
+
+  const candleData = chartData || [];
 
   const isPositive = stock.change >= 0;
 
@@ -109,7 +128,12 @@ export default function ChartTerminal() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-[400px]">
+        <div className="flex-1 min-h-[400px] relative">
+          {isChartLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-10 rounded-xl">
+              <Activity className="w-8 h-8 text-primary animate-pulse" />
+            </div>
+          )}
           <CandlestickChart data={candleData} />
         </div>
       </div>

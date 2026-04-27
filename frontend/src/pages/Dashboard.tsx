@@ -80,12 +80,17 @@ export default function Dashboard() {
     if (indexHistory && indexHistory.length > 0) {
       return indexHistory.map((pt: any, i: number) => {
         const prev = indexHistory[i - 1] || pt;
+        // In the new backend schema, 'value' is renamed to 'price'
+        const currentPrice = pt.price || pt.value || 0;
+        const prevPrice = prev.price || prev.value || currentPrice;
+        
         return {
           time: pt.time,
-          open: prev.value,
-          high: Math.max(prev.value, pt.value),
-          low: Math.min(prev.value, pt.value),
-          close: pt.value,
+          open: prevPrice,
+          high: Math.max(prevPrice, currentPrice),
+          low: Math.min(prevPrice, currentPrice),
+          close: currentPrice,
+          volume: pt.volume || 0
         };
       });
     }

@@ -3,14 +3,38 @@ import httpx
 import traceback
 import re
 import random
+import pytz
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
-from service import upsert_market_indices, upsert_market_watch, db
+from service import upsert_market_indices, upsert_market_watch, db, record_market_snapshot
 from models import MarketIndex, MarketWatch
-from fixed_symbols import FIXED_SYMBOLS
+from fixed_symbols import FIXED_SYMBOLS, CURATED_COMPANIES
 
 # The PSX Data Portal (DPS) Market Watch URL - much more reliable for real-time tickers
 PSX_DATA_PORTAL_URL = "https://dps.psx.com.pk/market-watch"
+
+def is_market_open() -> bool:
+    """
+    Checks if the PSX market is currently open.
+    Hours: Mon-Fri, 09:15 AM to 03:30 PM (PKT).
+    """
+    # Force timezone to Asia/Karachi
+    pkt = pytz.timezone('Asia/Karachi')
+    now = datetime.now(pkt)
+    
+    # 1. Check Weekend (Saturday=5, Sunday=6)
+    if now.weekday() >= 5:
+        return False
+        
+    # 2. Check Hours (09:15 to 15:30)
+    current_time = now.time()
+    start_time = datetime.strptime("09:15", "%H:%M").time()
+    end_time = datetime.strptime("15:30", "%H:%M").time()
+    
+    if current_time < start_time or current_time > end_time:
+        return False
+        
+    return True
 
 def extract_number(text: str) -> float:
     """Safely extracts a clean float from strings containing arrows, commas, or dashes."""
@@ -56,6 +80,28 @@ PSX_SECTOR_MAP = {
     "0837": "EXCHANGE TRADED FUNDS",
     "0838": "REAL ESTATE DEVELOPMENT & RESIDENTIAL",
 }
+
+async def seed_companies_metadata():
+    """Seeds the companies collection with static curated metadata (Slow Data)."""
+    if not CURATED_COMPANIES:
+        return
+    
+    print("[BACKEND] Syncing static company metadata...")
+    from pymongo import UpdateOne
+    ops = []
+    for sym, meta in CURATED_COMPANIES.items():
+        ops.append(UpdateOne(
+            {"symbol": sym.upper()},
+            {"$set": {
+                "symbol": sym.upper(),
+                "company_name": meta.get("name"),
+                "sector": meta.get("sector", "MISCELLANEOUS").upper(),
+                "indices": meta.get("indices", [])
+            }},
+            upsert=True
+        ))
+    if ops:
+        await db.companies.bulk_write(ops)
 
 async def fetch_psx_data():
     headers = {
@@ -131,6 +177,11 @@ async def fetch_psx_data():
                     if scrip not in FIXED_SYMBOLS:
                         continue
 
+                    # Use curated metadata for name and sector if available
+                    metadata = CURATED_COMPANIES.get(scrip, {})
+                    clean_name = metadata.get("name", scrip)
+                    clean_sector = metadata.get("sector", sector.upper())
+
                     stocks.append(MarketWatch(
                         symbol=scrip,
                         current_price=current,
@@ -138,7 +189,6 @@ async def fetch_psx_data():
                         volume=volume,
                         high=high,
                         low=low,
-                        sector=sector.upper(),
                         last_updated=datetime.now(timezone.utc)
                     ))
                 except Exception:
@@ -175,12 +225,15 @@ async def fetch_psx_data():
                 )
                 await upsert_market_indices([idx_data])
                 
-                # Record to history
-                await db.market_history.insert_one({
-                    "symbol": sym,
-                    "value": new_val,
-                    "time": datetime.now(timezone.utc)
-                })
+                # Record to history (Using upgraded Time Series schema)
+                try:
+                    await db.market_history.insert_one({
+                        "symbol": sym,
+                        "price": new_val,
+                        "volume": 0,
+                        "time": datetime.now(timezone.utc)
+                    })
+                except: pass
             
         except Exception as e:
             print(f"=> Scraper Error: {e}")
@@ -214,27 +267,16 @@ async def run_global_snapshot_task():
     """
     print("[BACKEND] Global Snapshot Task Started (3-hour loop)")
     while True:
+        if not is_market_open():
+            print("[*] Market closed. Snapshot skipped.")
+            await asyncio.sleep(1800) # Check again in 30 mins
+            continue
+            
         try:
             print(f"[SNAPSHOT] {datetime.utcnow().isoformat()} - Capturing curated market state...")
             
-            # Identify and capture Top 20x20 symbols
-            snapshots = await get_curated_symbols()
-            
-            if snapshots:
-                from pymongo import InsertOne
-                now = datetime.now(timezone.utc)
-                ops = [
-                    InsertOne({
-                        "symbol": s["symbol"],
-                        "value": s["value"],
-                        "time": now
-                    }) for s in snapshots
-                ]
-                
-                await db.market_history.bulk_write(ops, ordered=False)
-                print(f"=> SUCCESS: Recorded {len(ops)} snapshots to market_history.")
-            else:
-                print("=> WARNING: No snapshots captured (db empty or query failed).")
+            # Use the new optimized service call
+            await record_market_snapshot()
                 
         except Exception as e:
             print(f"=> Snapshot Task Error: {e}")
@@ -247,7 +289,15 @@ async def run_psx_scraper():
     print("PSX Scraper Background Task Started (5-minute loop)")
     fail_count = 0
     while True:
+        if not is_market_open():
+            print("[*] Market closed. Scraper skipped.")
+            await asyncio.sleep(1800) # Check again in 30 mins
+            continue
+            
         try:
+            # Sync static metadata once per loop (safe due to upsert)
+            await seed_companies_metadata()
+            
             await fetch_psx_data()
             fail_count = 0 # Reset on success
             await asyncio.sleep(1800) # 30 minutes

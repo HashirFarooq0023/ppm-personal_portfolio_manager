@@ -1,0 +1,42 @@
+# PPSM System Details: Graphs and Scraping
+
+## 1. Frontend Graph Extension
+The frontend uses the **Lightweight Charts** library by TradingView (`lightweight-charts`).
+
+### How it works in the Frontend:
+- **Components**: The logic is encapsulated in `CandlestickChart.tsx` and `LineChartWidget.tsx` located in `frontend/src/components/charts/`.
+- **Functionality**:
+    - **CandlestickChart**: Renders OHLC (Open, High, Low, Close) data for symbol details.
+    - **LineChartWidget**: Renders area/line charts for market indices and portfolio value.
+- **Features**: It provides high-performance interactive features such as zooming, panning, crosshairs, and automatic time-scale formatting.
+- **Data Source**: The components fetch data from the backend API (specifically `/history` and `/indices` endpoints), which returns time-series data from MongoDB.
+
+---
+
+## 2. Data Scraping Mechanism
+The system utilizes a multi-layered scraping approach to ensure data accuracy and reliability from the Pakistan Stock Exchange (PSX).
+
+### Scrapers:
+1. **Production Scraper (`backend/scraper.py`)**:
+    - **Target**: `https://dps.psx.com.pk/market-watch`
+    - **Logic**: Uses `httpx` for fast, asynchronous HTTP requests and `BeautifulSoup` for HTML parsing.
+    - **Captured Fields**: Symbol, Sector, LDCP (Last Day Close Price), Open, High, Low, Current Price, and Volume.
+    - **Frequency**: Runs in a background loop every 30 minutes.
+2. **Data Harvester (`backend/scrapingdata.py`)**:
+    - **Target**: `https://dps.psx.com.pk/listings`
+    - **Logic**: Uses **Playwright** (Chromium) to handle JavaScript-rendered tables and pagination.
+    - **Purpose**: Primarily used for deep harvesting of company directories and sector mappings.
+
+### How it works (The Pipeline):
+1. **Connection**: The scraper connects to the PSX Data Portal using randomized User-Agents to bypass bot detection.
+2. **Parsing**: It extracts the market table rows. Numeric IDs for sectors (e.g., "0801") are mapped to human-readable names via `PSX_SECTOR_MAP`.
+3. **Database Update**: 
+    - Live prices are updated in the `market_watch` and `market_indices` collections in MongoDB using `upsert` operations.
+    - A background "Snapshot Task" (`run_global_snapshot_task`) runs every 30 minutes to record the current state into the `market_history` collection.
+4. **API Delivery**: The FastAPI backend (`backend/main.py`) serves this historical data to the frontend, where `lightweight-charts` renders it for the user.
+
+### Key Technologies:
+- **Playwright**: For complex/JS-heavy scraping.
+- **httpx / BeautifulSoup**: For high-performance, lightweight price updates.
+- **MongoDB**: To store both current state and historical time-series data.
+- **FastAPI**: To bridge the scraped data to the frontend.

@@ -14,7 +14,7 @@ from models import (
 from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
     get_all_indices, get_market_watch, get_sector_performance,
-    get_deleted_holdings, restore_holding, get_index_history,
+    get_deleted_holdings, restore_holding, get_index_history, get_symbol_history_ohlc,
     generate_stock_analysis, empty_bin_items, delete_transaction,
     record_market_snapshot, record_all_portfolios_snapshot,
     ensure_indexes
@@ -112,7 +112,7 @@ async def get_current_user(auth: HTTPAuthorizationCredentials = Security(securit
 def health_check():
     return None
 
-@app.get("/api/ping")
+@app.api_route("/api/ping", methods=["GET", "HEAD"])
 async def ping():
     return {"status": "awake", "message": "Backend is active!"}
 
@@ -196,8 +196,10 @@ async def get_overview():
     return MarketOverview(indices=indices, stocks=stocks, sectors=sectors)
 
 @app.get("/api/market/history/{symbol}")
-async def get_history(symbol: str, limit: int = 100):
+async def get_history(symbol: str, limit: int = 100, format: str = "line"):
     """Public: Returns historical data points for a symbol (index or stock)."""
+    if format == "candle":
+        return await get_symbol_history_ohlc(symbol, limit)
     return await get_index_history(symbol, limit)
 
 @app.get("/api/market/scrape")
@@ -219,4 +221,4 @@ if __name__ == "__main__":
     import uvicorn
     # Grab the port Render assigns, or default to 8000 locally
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=port)

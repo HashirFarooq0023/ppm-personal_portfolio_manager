@@ -1,6 +1,6 @@
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import UpdateOne, IndexModel, ASCENDING, DESCENDING
+from pymongo import UpdateOne, IndexModel, ASCENDING, DESCENDING, ReturnDocument
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from models import (
     PortfolioItem, PortfolioResponseItem, PortfolioSummary, PortfolioHistoryPoint,
     MarketIndex, MarketWatch, User, Transaction, SectorPerformance,
-    AIAnalysisRequest, AIAnalysisResponse
+    AIAnalysisRequest, AIAnalysisResponse, CandleData, Company, MarketHistoryPoint
 )
 from fastapi import HTTPException
 import json
@@ -32,35 +32,66 @@ client = AsyncIOMotorClient(
     maxPoolSize=10, 
     minPoolSize=1, 
     waitQueueTimeoutMS=5000,
-    serverSelectionTimeoutMS=5000
+    serverSelectionTimeoutMS=10000, # Increased to handle Atlas Free Tier blips
+    retryWrites=True,
+    retryReads=True
 )
 db = client[DB_NAME]
 
 async def ensure_indexes():
-    """Defines and creates indexes to prevent full scans on Atlas Free Tier."""
+    """Defines and creates indexes for the normalized PPSM schema."""
     print("[BACKEND] Checking Database Indexes...")
     try:
-        # 1. Market History: Critical for charts. Compound index for (symbol, time)
-        history_indexes = [
-            IndexModel([("symbol", ASCENDING), ("time", DESCENDING)], name="history_symbol_time_idx")
-        ]
-        await db.market_history.create_indexes(history_indexes)
+        # 1. Market History (Time Series Ready)
+        try:
+            await db.market_history.create_indexes([
+                IndexModel([("symbol", ASCENDING), ("time", DESCENDING)], name="history_symbol_time_idx", unique=True)
+            ])
+        except Exception as e:
+            # If the index exists but with different options (e.g. not unique), drop and recreate it
+            if "IndexKeySpecsConflict" in str(e) or "IndexOptionsConflict" in str(e):
+                print("[BACKEND] Index options mismatch. Updating history_symbol_time_idx...")
+                await db.market_history.drop_index("history_symbol_time_idx")
+                await db.market_history.create_indexes([
+                    IndexModel([("symbol", ASCENDING), ("time", DESCENDING)], name="history_symbol_time_idx", unique=True)
+                ])
+            else:
+                raise e
         
-        # 2. Market Watch: Critical for landing page and sector performance
-        watch_indexes = [
-            IndexModel([("symbol", ASCENDING)], name="watch_symbol_idx"),
-            IndexModel([("sector", ASCENDING)], name="watch_sector_idx")
-        ]
-        await db.market_watch.create_indexes(watch_indexes)
+        # 2. Companies (Slow Data)
+        await db.companies.create_indexes([
+            IndexModel([("symbol", ASCENDING)], name="company_symbol_idx", unique=True),
+            IndexModel([("sector", ASCENDING)], name="company_sector_idx")
+        ])
         
-        # 3. Portfolio: Critical for user-specific loading
-        portfolio_indexes = [
-            IndexModel([("clerk_id", ASCENDING)], name="portfolio_user_idx"),
-            IndexModel([("symbol", ASCENDING)], name="portfolio_symbol_idx")
-        ]
-        await db.portfolio.create_indexes(portfolio_indexes)
+        # 3. Market Watch (Fast Data)
+        try:
+            await db.market_watch.create_indexes([
+                IndexModel([("symbol", ASCENDING)], name="watch_symbol_idx", unique=True)
+            ])
+        except Exception as e:
+            if "IndexKeySpecsConflict" in str(e) or "IndexOptionsConflict" in str(e):
+                print("[BACKEND] Index options mismatch. Updating watch_symbol_idx...")
+                await db.market_watch.drop_index("watch_symbol_idx")
+                await db.market_watch.create_indexes([
+                    IndexModel([("symbol", ASCENDING)], name="watch_symbol_idx", unique=True)
+                ])
+            else:
+                raise e
         
-        print("=> SUCCESS: All database indexes verified/created.")
+        # 4. Portfolio (Current State Only)
+        await db.portfolio.create_indexes([
+            IndexModel([("clerk_id", ASCENDING), ("symbol", ASCENDING)], name="portfolio_user_symbol_idx", unique=True)
+        ])
+
+        # 5. Transactions (Infinite Standalone Ledger)
+        await db.transactions.create_indexes([
+            IndexModel([("clerk_id", ASCENDING), ("symbol", ASCENDING)], name="transaction_user_symbol_idx"),
+            IndexModel([("transaction_id", ASCENDING)], name="transaction_id_idx", unique=True),
+            IndexModel([("date", DESCENDING)], name="transaction_date_idx")
+        ])
+        
+        print("=> SUCCESS: Normalized database indexes verified.")
     except Exception as e:
         print(f"=> ERROR creating indexes: {e}")
 
@@ -72,11 +103,27 @@ async def get_all_indices() -> List[MarketIndex]:
     return [MarketIndex(**i) for i in indices]
 
 async def get_market_watch() -> List[MarketWatch]:
-    # Remove the .limit(100) from the query
-    cursor = db.market_watch.find() 
-    # Increase the length to 1000 so it captures the whole PSX market
+    """Fetches live prices and hydrates them with static company metadata."""
+    from fixed_symbols import FIXED_SYMBOLS
+    # 1. Fetch fast-changing market data (ONLY for fixed symbols)
+    cursor = db.market_watch.find({"symbol": {"$in": list(FIXED_SYMBOLS)}})
     stocks = await cursor.to_list(length=1000) 
-    return [MarketWatch(**s) for s in stocks]
+    
+    # 2. Fetch slow-changing company metadata
+    company_cursor = db.companies.find()
+    companies_list = await company_cursor.to_list(length=1000)
+    company_map = {c['symbol']: c for c in companies_list}
+    
+    result = []
+    for s in stocks:
+        meta = company_map.get(s['symbol'], {})
+        # Merge live data with static metadata for the frontend
+        merged = {**s}
+        merged['company_name'] = meta.get('company_name', s.get('company_name'))
+        merged['sector'] = meta.get('sector', s.get('sector', 'Miscellaneous'))
+        
+        result.append(MarketWatch.model_validate(merged))
+    return result
 
 async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
     cursor = db.market_history.find({"symbol": symbol.upper()}).sort("time", -1).limit(limit)
@@ -93,16 +140,60 @@ async def get_index_history(symbol: str, limit: int = 100) -> List[dict]:
         {"time": ts, "value": val} 
         for ts, val in sorted(temp_map.items())
     ]
+
+async def get_symbol_history_ohlc(symbol: str, limit: int = 200) -> List[CandleData]:
+    """
+    Aggregates raw market snapshots into OHLC (Open, High, Low, Close) candles.
+    Buckets data into 30-minute intervals to match the scraper frequency.
+    """
+    pipeline = [
+        {"$match": {"symbol": symbol.upper()}},
+        {
+            "$group": {
+                "_id": {
+                    "$dateTrunc": {
+                        "date": "$time",
+                        "unit": "minute",
+                        "binSize": 30
+                    }
+                },
+                "open": {"$first": "$price"},
+                "high": {"$max": "$price"},
+                "low": {"$min": "$price"},
+                "close": {"$last": "$price"}
+            }
+        },
+        {"$sort": {"_id": 1}},
+        {"$limit": limit}
+    ]
+    
+    candles = []
+    async for doc in db.market_history.aggregate(pipeline):
+        candles.append(CandleData(
+            time=int(doc["_id"].timestamp()),
+            open=doc["open"],
+            high=doc["high"],
+            low=doc["low"],
+            close=doc["close"]
+        ))
+    
+    # Fallback: if no history yet, return an empty list instead of crashing
+    return candles
 async def get_sector_performance() -> list[SectorPerformance]:
     """Aggregates individual stock data into sector performance metrics using MongoDB."""
+    from fixed_symbols import FIXED_SYMBOLS
     
     # 1. Get the total number of stocks so we can calculate the percentage share
-    total_stocks = await db.market_watch.count_documents({})
+    filter_query = {"symbol": {"$in": list(FIXED_SYMBOLS)}}
+    total_stocks = await db.market_watch.count_documents(filter_query)
     if total_stocks == 0:
         return []
         
     # 2. Let MongoDB do the math! (Much faster than a Python loop)
     pipeline = [
+        {
+            "$match": filter_query
+        },
         {
             "$group": {
                 "_id": "$sector",
@@ -158,32 +249,40 @@ async def upsert_market_watch(stocks: List[MarketWatch]):
     await db.market_watch.bulk_write(operations)
 
 async def record_market_snapshot():
-    """Captures a full historical snapshot of indices and all stocks."""
+    """Captures a full historical snapshot with price and volume (Time Series Optimized)."""
     print("[BACKEND] Recording Market History Snapshot...")
     now = datetime.now(timezone.utc)
     
     # 1. Snapshot Indices
     indices = await db.market_indices.find().to_list(length=10)
     for idx in indices:
-        await db.market_history.insert_one({
-            "symbol": idx["symbol"],
-            "value": idx["value"],
-            "time": now
-        })
+        try:
+            await db.market_history.insert_one({
+                "symbol": idx["symbol"],
+                "price": idx["value"],
+                "volume": 0, # Indices don't have volume in the same way
+                "time": now
+            })
+        except: pass # Skip duplicates
         
-    # 2. Snapshot All Stocks (to enable individual company charting)
+    # 2. Snapshot All Stocks (Time Series Data)
     stocks = await db.market_watch.find().to_list(length=1000)
     history_points = []
     for s in stocks:
         history_points.append({
             "symbol": s["symbol"],
-            "value": s["current_price"],
+            "price": s["current_price"],
+            "volume": int(s.get("volume", 0)),
             "time": now
         })
     
     if history_points:
-        await db.market_history.insert_many(history_points)
-        print(f"=> INFO: Recorded {len(history_points)} stock and {len(indices)} index points to history.")
+        try:
+            await db.market_history.insert_many(history_points, ordered=False)
+            print(f"=> INFO: Recorded {len(history_points)} stock snapshots.")
+        except Exception as e:
+            # Duplicate timestamps are caught by unique index
+            pass
 
 async def record_all_portfolios_snapshot():
     """Iterates through all users and records their total portfolio metrics."""
@@ -216,13 +315,14 @@ async def record_all_portfolios_snapshot():
 # --- Portfolio Services ---
 
 async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
+    """Returns user portfolio summary, fetching transactions from standalone collection."""
     cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": {"$in": [False, None]}})
     items = await cursor.to_list(length=100)
     
     if not items:
         return PortfolioSummary(items=[], total_cost=0, total_value=0, total_profit_loss=0, total_profit_loss_percent=0)
 
-    # 1. Bulk Fetch Market Data
+    # 1. Bulk Fetch Market Prices
     symbols = [item['symbol'] for item in items]
     market_cursor = db.market_watch.find({"symbol": {"$in": symbols}})
     market_docs = await market_cursor.to_list(length=len(symbols))
@@ -233,7 +333,7 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     total_value = 0.0
     
     for item in items:
-        # Get live price from our pre-fetched map
+        # Get live price
         market_data = market_map.get(item['symbol'])
         current_price = market_data['current_price'] if market_data else item['average_buy_price']
         
@@ -245,23 +345,9 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         total_cost += cost
         total_value += value
         
-        # Normalize transactions (backfill IDs if missing)
-        raw_transactions = item.get("transactions", []) or []
-        normalized_transactions = []
-        needs_update = False
-        
-        for t in raw_transactions:
-            if not t.get("transaction_id"):
-                t["transaction_id"] = str(uuid4())
-                needs_update = True
-            normalized_transactions.append(t)
-
-        # Batch update if IDs were added (Legacy support)
-        if needs_update:
-            asyncio.create_task(db.portfolio.update_one(
-                {"_id": item["_id"]},
-                {"$set": {"transactions": normalized_transactions}}
-            ))
+        # 2. Fetch Transactions from the separate infinite ledger
+        txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
+        transactions = await txn_cursor.to_list(length=500)
 
         response_items.append(PortfolioResponseItem(
             symbol=item['symbol'],
@@ -272,7 +358,7 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
             total_value=value,
             profit_loss=pl,
             profit_loss_percent=pl_pct,
-            transactions=[Transaction(**t) for t in normalized_transactions]
+            transactions=[Transaction(**t) for t in transactions]
         ))
     
     total_pl = total_value - total_cost
@@ -287,71 +373,77 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     )
 
 async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float, reset_history: bool = False):
-    existing = await db.portfolio.find_one({"clerk_id": clerk_id, "symbol": symbol})
-    
+    """
+    Scalable Portfolio Mutation:
+    Transactions are written to a standalone collection (infinite ledger).
+    Portfolio collection only stores current totals (no unbounded arrays).
+    """
+    symbol = symbol.upper()
     txn_id = str(uuid4())
     new_txn = Transaction(
         transaction_id=txn_id,
+        clerk_id=clerk_id,
+        symbol=symbol,
         action=action,
         shares=shares,
-        price=price
+        price=price,
+        date=datetime.utcnow()
     )
 
-    if existing:
-        is_binned = existing.get('is_deleted', False)
-        
-        if is_binned and reset_history:
-            # Wipe history and start fresh
-            new_shares = shares if action == "Buy" else 0
-            new_avg_price = price
-            await db.portfolio.update_one(
-                {"_id": existing["_id"]},
-                {
-                    "$set": {
-                        "shares": new_shares, 
-                        "average_buy_price": new_avg_price,
-                        "is_deleted": False,
-                        "deleted_at": None,
-                        "transactions": [new_txn.model_dump()]
-                    }
-                }
+    async with await client.start_session() as session:
+        async with session.start_transaction():
+            # 1. Fetch current totals
+            existing = await db.portfolio.find_one(
+                {"clerk_id": clerk_id, "symbol": symbol},
+                session=session
             )
-        else:
-            # Normal update (or restore without reset)
-            if action == "Buy":
-                new_shares = existing['shares'] + shares
-                # Weighted Average Cost Calculation
-                new_avg_price = ((existing['shares'] * existing['average_buy_price']) + (shares * price)) / new_shares
-            else: # Sell
-                new_shares = max(0, existing['shares'] - shares)
-                # Average buy price doesn't change on sell (it's the cost of remaining shares)
-                new_avg_price = existing['average_buy_price']
-            
-            update_data = {
-                "shares": new_shares, 
-                "average_buy_price": new_avg_price,
-                "is_deleted": False, # Ensure restored if it was binned
-                "deleted_at": None
-            }
-            
-            await db.portfolio.update_one(
-                {"_id": existing["_id"]},
-                {
-                    "$set": update_data,
-                    "$push": {"transactions": new_txn.model_dump()}
-                }
-            )
-    else:
-        # If selling something not owned, we'll ignore for now or start at 0
-        start_shares = shares if action == "Buy" else 0
-        new_holding = PortfolioItem(
-            clerk_id=clerk_id,
-            symbol=symbol,
-            shares=start_shares,
-            average_buy_price=price,
-            transactions=[new_txn]
-        )
-        await db.portfolio.insert_one(new_holding.model_dump())
+
+            if existing:
+                prev_shares = existing.get('shares', 0)
+                prev_avg_price = existing.get('average_buy_price', 0.0)
+                is_binned = existing.get('is_deleted', False)
+                
+                if is_binned and reset_history:
+                    # Wipe Infinite Ledger for this stock if requested
+                    await db.transactions.delete_many({"clerk_id": clerk_id, "symbol": symbol}, session=session)
+                    new_shares = shares if action == "Buy" else 0
+                    new_avg_price = price
+                else:
+                    if action == "Buy":
+                        new_shares = prev_shares + shares
+                        new_avg_price = ((prev_shares * prev_avg_price) + (shares * price)) / new_shares
+                    else: # Sell
+                        new_shares = max(0, prev_shares - shares)
+                        new_avg_price = prev_avg_price
+                
+                # Update Totals
+                await db.portfolio.update_one(
+                    {"_id": existing["_id"]},
+                    {
+                        "$set": {
+                            "shares": new_shares,
+                            "average_buy_price": new_avg_price,
+                            "is_deleted": False,
+                            "deleted_at": None,
+                            "last_modified": datetime.utcnow()
+                        }
+                    },
+                    session=session
+                )
+            else:
+                # Create New Holding Entry
+                start_shares = shares if action == "Buy" else 0
+                await db.portfolio.insert_one({
+                    "clerk_id": clerk_id,
+                    "symbol": symbol,
+                    "shares": start_shares,
+                    "average_buy_price": price,
+                    "is_deleted": False,
+                    "last_modified": datetime.utcnow()
+                }, session=session)
+
+            # 2. Permanent Ledger Entry (Always written to separate collection)
+            await db.transactions.insert_one(new_txn.model_dump(), session=session)
 
 def _recompute_holding_from_transactions(transactions: List[dict]) -> tuple[int, float]:
     """
@@ -386,38 +478,40 @@ def _recompute_holding_from_transactions(transactions: List[dict]) -> tuple[int,
     return shares, avg_price
 
 async def delete_transaction(clerk_id: str, transaction_id: str) -> None:
-    """
-    Deletes a single transaction from the ledger and recomputes holding totals.
-    """
-    holding = await db.portfolio.find_one(
-        {"clerk_id": clerk_id, "transactions.transaction_id": transaction_id}
-    )
-    if not holding:
-        raise HTTPException(status_code=404, detail="Transaction not found.")
+    """Deletes a trade from the separate ledger and updates totals atomically."""
+    async with await client.start_session() as session:
+        async with session.start_transaction():
+            # 1. Fetch the transaction to delete
+            txn = await db.transactions.find_one({"transaction_id": transaction_id, "clerk_id": clerk_id}, session=session)
+            if not txn:
+                raise HTTPException(status_code=404, detail="Transaction not found.")
 
-    transactions = holding.get("transactions", []) or []
-    new_transactions = [t for t in transactions if t.get("transaction_id") != transaction_id]
+            symbol = txn["symbol"]
 
-    if len(new_transactions) == len(transactions):
-        raise HTTPException(status_code=404, detail="Transaction not found.")
+            # 2. Remove from ledger
+            await db.transactions.delete_one({"_id": txn["_id"]}, session=session)
 
-    new_shares, new_avg_price = _recompute_holding_from_transactions(new_transactions)
+            # 3. Recompute Totals from the remaining ledger
+            txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": symbol}, session=session)
+            remaining_txns = await txn_cursor.to_list(length=1000)
+            
+            new_shares, new_avg_price = _recompute_holding_from_transactions(remaining_txns)
+            soft_delete = len(remaining_txns) == 0 or new_shares <= 0
 
-    # If this was the last transaction, soft-delete the whole holding (move to bin).
-    soft_delete = len(new_transactions) == 0 or new_shares == 0
-
-    await db.portfolio.update_one(
-        {"_id": holding["_id"]},
-        {
-            "$set": {
-                "transactions": new_transactions,
-                "shares": new_shares,
-                "average_buy_price": new_avg_price,
-                "is_deleted": soft_delete,
-                "deleted_at": datetime.utcnow() if soft_delete else None,
-            }
-        },
-    )
+            # 4. Update Portfolio Document
+            await db.portfolio.update_one(
+                {"clerk_id": clerk_id, "symbol": symbol},
+                {
+                    "$set": {
+                        "shares": max(0, new_shares),
+                        "average_buy_price": new_avg_price if new_shares > 0 else 0.0,
+                        "is_deleted": soft_delete,
+                        "deleted_at": datetime.utcnow() if soft_delete else None,
+                        "last_modified": datetime.utcnow()
+                    }
+                },
+                session=session
+            )
 
 async def empty_bin_items(clerk_id: str):
     """Permanently deletes all binned holdings for a user."""
@@ -495,9 +589,49 @@ async def generate_stock_analysis(clerk_id: str, symbol: Optional[str], question
 
     openai_client = AsyncOpenAI(api_key=api_key)
 
-    # ---- MODE 2: GENERAL CHAT (no symbol selected) ----
+    # ---- 0. Fetch Global Market Context (Fresh Data for AI) ----
+    from fixed_symbols import FIXED_SYMBOLS, CURATED_COMPANIES
+    import re
+    
+    market_snapshot = "Market currently unavailable."
+    try:
+        # Fetch Top 3 Gainers and Losers for context
+        cursor = db.market_watch.find({"symbol": {"$in": list(FIXED_SYMBOLS)}}).sort("change_percent", -1)
+        all_market = await cursor.to_list(length=100)
+        if all_market:
+            gainers = all_market[:3]
+            losers = all_market[-3:]
+            market_snapshot = "**Top Gainers Today:** " + ", ".join([f"{s['symbol']} ({s.get('change_percent', 0):+.2f}%)" for s in gainers])
+            market_snapshot += "\n**Top Losers Today:** " + ", ".join([f"{s['symbol']} ({s.get('change_percent', 0):+.2f}%)" for s in losers])
+    except Exception as e:
+        print(f"Market context error: {e}")
+
+    # ---- 1. Optimized Symbol Detection ----
+    if not symbol and question:
+        q_upper = question.upper()
+        q_lower = question.lower()
+        import difflib
+
+        # 1.1. Exact word match for symbols (High Priority)
+        detected = [sym for sym in FIXED_SYMBOLS if re.search(rf'\b{sym}\b', q_upper)]
+        if detected:
+            symbol = detected[0]
+        else:
+            # 1.2. Fuzzy/Part match for Company Names
+            for sym, details in CURATED_COMPANIES.items():
+                full_name = details["name"].lower()
+                # Get first significant word (e.g., "Meezan", "Systems", "Lucky")
+                name_parts = full_name.split()
+                # Skip generic first words like "Bank" or "The"
+                common_name = name_parts[0] if name_parts[0] not in ["bank", "the", "national", "oil", "pakistan"] else (name_parts[1] if len(name_parts) > 1 else name_parts[0])
+                
+                # Check for direct substring or fuzzy match of the common name
+                if common_name in q_lower or (len(common_name) > 4 and difflib.get_close_matches(common_name, q_lower.split(), n=1, cutoff=0.7)):
+                    symbol = sym
+                    break
+
+    # ---- MODE 2: GENERAL CHAT (No Symbol Selected) ----
     if not symbol:
-        # Fetch portfolio so the AI knows what the user owns
         portfolio = await get_user_portfolio(clerk_id)
         portfolio_summary = ""
         if portfolio.items:
@@ -509,29 +643,38 @@ async def generate_stock_analysis(clerk_id: str, symbol: Optional[str], question
                     f"- {item.symbol}: {item.shares} shares @ PKR {item.average_buy_price:.2f} "
                     f"(Current: PKR {item.current_price:.2f}, {abs(item.profit_loss_percent):.1f}% {ownership_word})\n"
                 )
-            portfolio_summary += (
-                f"\nTotal Portfolio Value: PKR {portfolio.total_value:,.0f} | "
-                f"Total P&L: PKR {portfolio.total_profit_loss:,.0f} ({portfolio.total_profit_loss_percent:.1f}%)"
-            )
+            portfolio_summary += f"\nTotal Value: PKR {portfolio.total_value:,.0f} | P&L: PKR {portfolio.total_profit_loss:,.0f} ({portfolio.total_profit_loss_percent:.1f}%)"
         else:
             portfolio_summary = "The user has no stocks in their current active portfolio."
 
-        system_prompt = f"""You are an elite Financial Analyst and seasoned Stock Broker for the Pakistan Stock Exchange (PSX).
-You have decades of experience navigating the KSE-100. Be direct, confident, and street-smart.
+        # News Intent Detection: Broadened keywords to capture "projects", "goals", etc.
+        general_news = ""
+        news_keywords = ["news", "latest", "update", "impact", "budget", "dollar", "rate", "economy", "happened", "projects", "goals", "future", "vision"]
+        if any(kw in question.lower() for kw in news_keywords):
+            try:
+                results = DDGS().text("Pakistan PSX stock market news today", max_results=3)
+                if results:
+                    general_news = "\n**Latest Market News Snippets:**\n"
+                    for r in results:
+                        general_news += f"- {r.get('title')}: {r.get('body')[:180]}...\n"
+            except:
+                pass
 
-**IMPORTANT PORTFOLIO RULE:**
+        system_prompt = f"""You are an elite Financial Analyst and seasoned PSX Stock Broker.
+You are street-smart, direct, and data-driven.
+
+**CURRENT MARKET CONTEXT:**
+{market_snapshot}
+{general_news}
+
+**USER PORTFOLIO:**
 {portfolio_summary}
-The list above is the ONLY source of truth for the user's current holdings. If a stock is NOT on this list, they do NOT own it anymore (it may have been sold or moved to the bin). IGNORE any conflicting information about their holdings from the previous chat history below.
 
-CRITICAL RULE: Match the length and energy of the user's message.
-- If they say "hi" or "hello", reply with a short, friendly 1-2 sentence greeting. Do NOT dump a market report.
-- If they ask a simple question, give a concise answer (3-5 sentences max).
-- Only give detailed analysis with bullet points when they explicitly ask for it.
-- ALWAYS pivot general knowledge questions (e.g., "What is Islamabad?") back to the PSX. Briefly answer the question, then immediately highlight top PSX companies or sectors related to that topic where they can invest in shares.
-
-{portfolio_summary}
-
-Respond conversationally and accurately. You have full access to the user's portfolio data above — use it when they ask about their holdings. Format using **bold text** and bullet points only when the depth of the question warrants it. Do NOT return JSON."""
+**INSTRUCTIONS:**
+1. Match user energy: If they say "hi", be brief. If they ask for analysis, be deep.
+2. ALWAYS pivot general questions back to relevant PSX stocks or sectors.
+3. Use the Market Snapshot and Portfolio data to provide specific, personalized insights.
+4. Format with **bolding** and bullet points for readability. Do NOT return JSON."""
 
         messages = [{"role": "system", "content": system_prompt}]
         if history:
@@ -589,7 +732,7 @@ Respond conversationally and accurately. You have full access to the user's port
         print(f"DuckDuckGo Search error: {e}")
         news_context = "Could not retrieve live news."
 
-    # 3.5 Historical Trend Detection (NEW: AI Data Drive)
+    # 3.5 Historical Trend Detection
     history_context = "No recent historical trend data available."
     try:
         cursor = db.market_history.find({"symbol": symbol}).sort("time", -1).limit(10)
@@ -598,10 +741,10 @@ Respond conversationally and accurately. You have full access to the user's port
             history_context = "Recent Price Snapshots (Hourly):\n"
             for h in reversed(recent_history):
                 h_time = h.get('time', '').split('T')[-1].split('.')[0] if 'T' in h.get('time', '') else str(h.get('time'))
-                history_context += f"- At {h_time}: PKR {h.get('current_price', 0.0):.2f}\n"
+                history_context += f"- At {h_time}: PKR {h.get('price', 0.0):.2f}\n" # Renamed from current_price
             
-            first_p = recent_history[-1].get('current_price', 0.0) # oldest in set
-            last_p = recent_history[0].get('current_price', 0.0)   # newest
+            first_p = recent_history[-1].get('price', 0.0) # oldest in set
+            last_p = recent_history[0].get('price', 0.0)   # newest
             trend_pct = ((last_p - first_p) / first_p * 100) if first_p else 0
             history_context += f"\nApproximate 10-hour trend: {trend_pct:+.2f}%"
     except Exception as e:
@@ -611,6 +754,9 @@ Respond conversationally and accurately. You have full access to the user's port
     now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = f"""You are an elite Financial Analyst and seasoned Stock Broker for the Pakistan Stock Exchange (PSX).
 You have decades of experience navigating the KSE-100 and a reputation for being savvy and street-smart.
+
+**GLOBAL MARKET CONTEXT:**
+{market_snapshot}
 
 **CURRENT PORTFOLIO STATE (AS OF {now_str} UTC):**
 {user_context}

@@ -20,25 +20,32 @@ class User(APIModel):
     email: str
     joined_at: datetime = Field(default_factory=datetime.utcnow)
 
-# --- Transaction Model ---
+# --- Company Model (Slow Data: Normalized) ---
+class Company(APIModel):
+    symbol: str
+    company_name: str
+    sector: str
+    indices: List[str] = Field(default_factory=list)
+
+# --- Transaction Model (Stand-alone Ledger: Scalable) ---
 class Transaction(APIModel):
+    transaction_id: str
+    clerk_id: str
+    symbol: str
     date: datetime = Field(default_factory=datetime.utcnow)
     action: str # "Buy" or "Sell"
     shares: int
     price: float
-    # Used by the UI to delete a single transaction from the ledger.
-    # Optional to keep backwards compatibility with existing DB rows.
-    transaction_id: Optional[str] = None
 
-# --- Portfolio Model ---
+# --- Portfolio Model (Current State: Non-unbounded) ---
 class PortfolioItem(APIModel):
     clerk_id: str
     symbol: str
     shares: int
     average_buy_price: float
-    transactions: List[Transaction] = Field(default_factory=list)
     is_deleted: bool = False
     deleted_at: Optional[datetime] = None
+    last_modified: datetime = Field(default_factory=datetime.utcnow)
 
 class PortfolioAddRequest(APIModel):
     symbol: str
@@ -74,7 +81,7 @@ class PortfolioHistoryPoint(APIModel):
     total_profit_loss_percent: float
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-# --- Market Watch Model ---
+# --- Market Watch Model (Fast Data: Optimized) ---
 class MarketWatch(APIModel):
     symbol: str
     current_price: float
@@ -82,13 +89,23 @@ class MarketWatch(APIModel):
     volume: float = 0.0
     high: float = 0.0
     low: float = 0.0
-    sector: str = "Miscellaneous"
     last_updated: datetime = Field(default_factory=datetime.utcnow)
+    
+    # These will be hydrated from the Companies collection in the service layer
+    company_name: Optional[str] = None
+    sector: Optional[str] = "Miscellaneous"
 
 class SectorPerformance(APIModel):
     name: str
     change: float
     value: float # Percentage of market share
+
+# --- Market History Model (Time Series Ready) ---
+class MarketHistoryPoint(APIModel):
+    symbol: str
+    price: float
+    volume: int
+    time: datetime
 
 # --- Market Index Model ---
 class MarketIndex(APIModel):
@@ -117,3 +134,10 @@ class AIAnalysisResponse(APIModel):
     projects: List[str]
     links: List[str]
     risk_score: int # 1-10
+
+class CandleData(APIModel):
+    time: int # Unix timestamp
+    open: float
+    high: float
+    low: float
+    close: float

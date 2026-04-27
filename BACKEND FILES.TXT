@@ -1,75 +1,210 @@
-# Personal Portfolio Manager - Backend Architecture
+# Personal Portfolio Manager (PPSM) - Backend Architecture & Implementation Detail
 
-Directory: /backend (FastAPI + Python 3.x)
-Deployment: Render (via render.yaml)
+This document provides an exhaustive, line-by-line detailed breakdown of the backend architecture for the PPSM project. It covers everything from the core FastAPI structure to the intricate data scraping logic and database management.
 
-## Core Files
+---
 
-### 1. main.py
-The entry point of the FastAPI application.
-- Defines all REST API endpoints for Portfolio and Market data.
-- Handles Clerk JWT authentication via HTTPBearer.
-- Reads allowed CORS origins from CORS_ORIGINS env var (comma-separated).
-- Orchestrates the background scraper on startup via lifespan manager.
-- Redirects root (/) to the Vercel frontend dashboard.
+## 1. Core Architecture Overview
 
-### 2. models.py
-Data validation layer using Pydantic.
-- APIModel base with camelCase alias generation for JSON responses.
-- User, Transaction, PortfolioItem, PortfolioAddRequest, PortfolioResponseItem, PortfolioSummary.
-- MarketWatch, MarketIndex, MarketOverview, SectorPerformance.
+The PPSM Backend is built using **FastAPI**, a modern, high-performance web framework for building APIs with Python. It follows a decoupled service-oriented architecture where business logic is separated from the API routing layer.
 
-### 3. service.py
-Business logic and all MongoDB database interactions.
-- get_user_portfolio(): Returns live P&L for all active holdings.
-- add_or_update_holding(): Buy/Sell with weighted average cost calculation.
-- delete_holding(): Soft-delete (moves to bin, sets is_deleted=True).
-- get_deleted_holdings(): Returns bin items with live P&L.
-- restore_holding(): Restores a symbol from the bin.
-- get_all_indices(), get_market_watch(): Fetch cached market data.
-- get_index_history(): Returns de-duplicated time-series from market_history.
-- get_sector_performance(): Aggregates stock data into sector metrics.
-- upsert_market_indices(), upsert_market_watch(): Write scraped data to DB.
+### Technology Stack
+- **Framework**: FastAPI (Asynchronous execution)
+- **Database**: MongoDB (via Motor for async IO)
+- **Authentication**: Clerk (JWT Verification with RS256)
+- **Data Ingestion**: BeautifulSoup4 + HTTPX (Custom Scraper)
+- **AI Engine**: OpenAI GPT-4o-mini
+- **Deployment**: Render (Auto-scaling Web Service)
 
-### 4. scraper.py
-Background async task for real-time data ingestion (10-second interval).
-- Connects to PSX (dps.psx.com.pk/timeseries/int/) for intraday prices.
-- Tracks ~40 stocks across 7 sectors: Banks, Technology, Fertilizer,
-  Oil & Gas, Cement, Power, Chemicals.
-- Writes index snapshots to market_history collection for charting.
-- Updates market_indices and market_watch collections each cycle.
+---
 
-### 5. requirements.txt
-Python dependencies:
-- fastapi, uvicorn[standard] — Web framework and ASGI server.
-- motor — Async MongoDB driver.
-- python-jose[cryptography] — Clerk JWT decoding.
-- httpx — Async HTTP client (for PSX scraping).
-- pydantic, pydantic-settings, python-dotenv, python-multipart.
+## 2. Directory Structure Detail
 
-### 6. .env  (git-ignored, never commit)
-Runtime secrets loaded by service.py and main.py.
-- MONGODB_URI, DB_NAME
-- CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY
-- PORT, HOST
-- CORS_ORIGINS (comma-separated list for local dev)
+```text
+/backend
+├── .env                # Environment secrets (MONGODB_URI, OPENAI_API_KEY, etc.)
+├── .env.example        # Template for environment variables
+├── fixed_symbols.py    # Master list of curated PSX symbols (100+ companies)
+├── main.py             # Entry point, Lifespan manager, and API Routing
+├── models.py           # Pydantic models for request/response validation
+├── requirements.txt    # Python dependency manifest
+├── scraper.py          # Real-time PSX data scraping engine
+└── service.py          # Business logic and MongoDB interface layer
+```
 
-### 7. .env.example  (safe to commit)
-Template documenting all required environment variables.
-Copy to .env and fill in real values.
+---
 
-### 8. render.yaml
-Render deployment manifest.
-- buildCommand: pip install -r requirements.txt
-- startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-- Documents env vars required in the Render dashboard.
+## 3. main.py: The Orchestrator
 
-### 9. seed.py
-One-time utility script to populate the DB with initial market symbols.
+The `main.py` file is the heart of the backend. It initializes the FastAPI application and manages the background tasks that keep the market data fresh.
 
-## Local Dev
+### Lifespan Manager
+The `lifespan` async context manager handles startup and shutdown logic:
+1. **Startup**: 
+   - Calls `ensure_indexes()` to verify MongoDB performance constraints.
+   - Launches `run_psx_scraper()` as a background task.
+   - Launches `run_global_snapshot_task()` for historical data density.
+2. **Shutdown**:
+   - Gracefully cancels background tasks.
+   - Waits for task cleanup before closing the app.
 
-Run from project root:
-  python run_backend.py
-Or via npm:
-  npm run dev:backend
+### Security Layer (Clerk Integration)
+We implement a robust `get_current_user` dependency:
+- **JWT Decoding**: Uses `python-jose` to verify tokens signed by Clerk.
+- **JWKS Caching**: Public keys are fetched from Clerk's JWKS endpoint and cached to avoid excessive network calls.
+- **RS256 Validation**: Ensures every protected request is authentically signed.
+
+### Endpoint Catalog
+
+#### /api/ping
+- **Method**: GET
+- **Purpose**: Health check and wakeup signal (essential for Render's free tier spin-up).
+
+#### /api/portfolio
+- **Method**: GET (Protected)
+- **Purpose**: Returns the user's entire portfolio, calculated in real-time against live market prices.
+
+#### /api/market/indices
+- **Method**: GET (Public)
+- **Purpose**: Returns current values for KSE-100 and KSE-30.
+
+---
+
+## 4. scraper.py: The Data Engine
+
+The scraper is responsible for fetching real-time data from the Pakistan Stock Exchange (PSX).
+
+### Selector Strategy
+We target `https://dps.psx.com.pk/market-watch`. The scraper uses `BeautifulSoup` to parse the `DataTable` containing symbols, prices, and volumes.
+- **Numeric Sector Mapping**: PSX often uses numeric IDs for sectors. We maintain a `PSX_SECTOR_MAP` to translate these (e.g., "0823" -> "TECHNOLOGY & COMMUNICATION").
+- **Reliability**: The scraper includes exponential backoff for retries and layout change detection.
+
+### Snapshot Logic
+- **Real-time**: Prices are updated in the `market_watch` collection.
+- **Historical**: Every 30 minutes, a global snapshot of all curated symbols is recorded in `market_history`. This allows for high-density candlestick chart generation in the frontend.
+
+---
+
+## 5. service.py: Business Logic & Persistence
+
+The service layer contains the "brains" of the application.
+
+### Database Connection Pool
+We use `AsyncIOMotorClient` with optimized pooling:
+- `maxPoolSize=10`: Prevents overloading Atlas Free Tier.
+- `waitQueueTimeoutMS=5000`: Ensures the app fails fast rather than hanging on database lag.
+
+### Key Logic Modules
+
+#### ensure_indexes()
+Defines the indexing strategy:
+- `(symbol, time)` compound index for `market_history`.
+- `clerk_id` index for the `portfolio` collection.
+- `sector` index for market overview aggregation.
+
+#### get_user_portfolio(clerk_id)
+This is the most complex logic in the system:
+1. Fetches all holdings for the user.
+2. Bulk-fetches current market prices for all held symbols.
+3. Calculates **Weighted Average Buy Price** and **Live P&L**.
+4. Normalizes transaction IDs for consistent UI interactions.
+
+#### generate_stock_analysis()
+Leverages AI to provide investment insights:
+- **Context Injection**: Feeds the user's current holdings and recent news into GPT-4o-mini.
+- **Live Search**: Uses DuckDuckGo Search (`ddgs`) to fetch real-time news for specific symbols.
+- **Financial Verdict**: Instructs the AI to provide a clear BUY/HOLD/SELL verdict.
+
+---
+
+## 6. models.py: Data Validation
+
+Uses **Pydantic** for strict type checking and serialization.
+
+### Core Schemas
+- `PortfolioItem`: The internal database representation.
+- `PortfolioSummary`: The unified response sent to the dashboard.
+- `MarketIndex`: Structure for index tracking.
+- `Transaction`: Detail for individual buy/sell events.
+
+---
+
+## 7. Database Structure (MongoDB)
+
+### Collection: market_watch
+Stores the most recent price for every tracked stock.
+```json
+{
+  "symbol": "SYS",
+  "current_price": 450.20,
+  "change_percent": 1.5,
+  "volume": 1200000,
+  "sector": "TECHNOLOGY & COMMUNICATION",
+  "last_updated": "ISODate"
+}
+```
+
+### Collection: market_history
+Intraday snapshots for chart generation.
+```json
+{
+  "symbol": "KSE100",
+  "value": 65120.45,
+  "time": "ISODate"
+}
+```
+
+### Collection: portfolio
+User holdings and transaction ledgers.
+```json
+{
+  "clerk_id": "user_25...",
+  "symbol": "MEBL",
+  "shares": 100,
+  "average_buy_price": 185.50,
+  "is_deleted": false,
+  "transactions": [...]
+}
+```
+
+---
+
+## 8. Deployment & Scaling
+
+### Render Web Service
+- **Auto-Deploy**: Connected to the `main` branch of the GitHub repository.
+- **Environment**: Python 3.11 with `pip install -r requirements.txt`.
+- **Concurrency**: Managed by `uvicorn` with an asynchronous worker.
+
+---
+
+## 9. Future Roadmap
+
+1. **WebSockets**: Transition from HTTP polling to WebSockets for sub-second price updates.
+2. **Order Simulation**: Implement a "paper trading" mode with cash balance tracking.
+3. **Advanced Indicators**: Add RSI, MACD, and Moving Averages calculations to the backend service.
+4. **Multi-Portfolio Support**: Allow users to create separate portfolios for different strategies.
+5. **Notification Engine**: Trigger alerts (Email/Push) when a stock hits a specific price target.
+
+---
+
+## 10. Development Guide
+
+### Local Setup
+1. Clone the repository.
+2. Create a virtual environment: `python -m venv .venv`.
+3. Install dependencies: `pip install -r backend/requirements.txt`.
+4. Configure `.env` with `MONGODB_URI` and `OPENAI_API_KEY`.
+5. Run the server: `python backend/main.py`.
+
+### Testing
+We use `pytest` for unit testing the service layer and `httpx` for integration testing the API endpoints. Ensure you use a test database to avoid data corruption.
+
+---
+
+*This document is maintained as the primary source of truth for the PPSM Backend Architecture.*
+*Version: 2.1.0*
+*Last Updated: 2026-04-26*
+
+---
+(Note: This documentation is intentionally detailed to provide full transparency into the system logic.)

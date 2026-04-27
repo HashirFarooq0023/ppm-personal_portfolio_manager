@@ -1,5 +1,5 @@
-import { useEffect, useRef, useMemo } from 'react';
-import { createChart, ColorType, CandlestickSeries, type IChartApi } from 'lightweight-charts';
+import { useEffect, useRef, useMemo, memo } from 'react';
+import { createChart, ColorType, CandlestickSeries, HistogramSeries, type IChartApi } from 'lightweight-charts';
 import type { CandleData } from '@/data/mockData';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -8,7 +8,7 @@ interface CandlestickChartProps {
   height?: number;
 }
 
-export default function CandlestickChart({ data, height = 400 }: CandlestickChartProps) {
+const CandlestickChart = memo(function CandlestickChart({ data, height = 400 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const { theme } = useTheme();
@@ -27,21 +27,27 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
         textColor: isDark ? 'hsl(240, 5%, 65%)' : 'hsl(215, 16%, 35%)',
         fontFamily: 'IBM Plex Mono',
         fontSize: 11,
-        attributionLogo: false,
       },
       grid: {
         vertLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
         horzLines: { color: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.05)' },
       },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false },
+      rightPriceScale: { 
+        borderVisible: false,
+        scaleMargins: { top: 0.1, bottom: 0.25 }, // Leave space for volume
+      },
+      timeScale: { 
+        borderVisible: false,
+        timeVisible: true,
+        secondsVisible: false,
+      },
       crosshair: {
         vertLine: { color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)', width: 1, style: 3, labelVisible: false },
         horzLine: { color: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)', width: 1, style: 3 },
       },
     });
 
-    const series = chart.addSeries(CandlestickSeries, {
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: isDark ? 'hsl(161, 94%, 30%)' : 'hsl(142, 76%, 36%)',
       downColor: isDark ? 'hsl(0, 84%, 60%)' : 'hsl(0, 84%, 55%)',
       borderUpColor: isDark ? 'hsl(161, 94%, 35%)' : 'hsl(142, 76%, 40%)',
@@ -50,25 +56,50 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
       wickDownColor: isDark ? 'hsl(0, 84%, 65%)' : 'hsl(0, 84%, 60%)',
     });
 
-    // Ensure data is strictly sorted and unique by time for lightweight-charts
-    const uniqueData = Array.from(
-      memoData.reduce((map, item) => {
-        const ts = typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
-        map.set(ts, { ...item, time: ts });
-        return map;
-      }, new Map<number, any>()).values()
-    ).sort((a, b) => a.time - b.time);
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: { type: 'volume' },
+      priceScaleId: '', // Overlay on price scale
+    });
 
-    // Filter out consecutive duplicate candlesticks to prevent flat lines during weekends/nights
-    const transitionsOnly = uniqueData.filter((p, i, arr) => 
-      i === 0 || 
-      p.open !== arr[i - 1].open || 
-      p.high !== arr[i - 1].high || 
-      p.low !== arr[i - 1].low || 
-      p.close !== arr[i - 1].close
-    );
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 }, // Stick to bottom 20%
+    });
 
-    series.setData(transitionsOnly as any);
+    // 1. Unify time formats and remove duplicates
+    const uniqueMap = new Map<number, any>();
+    memoData.forEach(item => {
+      const ts = typeof item.time === 'number' ? item.time : Math.floor(new Date(item.time).getTime() / 1000);
+      uniqueMap.set(ts, { ...item, time: ts });
+    });
+
+    const sortedData = Array.from(uniqueMap.values()).sort((a, b) => a.time - b.time);
+
+    // 2. Filter out flatline data (Only if price hasn't moved AND volume is 0/missing)
+    const scrubbedData = sortedData.filter((p, i, arr) => {
+      if (i === 0) return true;
+      const prev = arr[i - 1];
+      const hasMoved = p.open !== prev.open || p.high !== prev.high || p.low !== prev.low || p.close !== prev.close;
+      const hasVolume = (p.volume || 0) > 0;
+      return hasMoved || hasVolume;
+    });
+
+    const processedData = scrubbedData.map(d => ({
+      ...d,
+      time: d.time
+    }));
+
+    candleSeries.setData(processedData as any);
+
+    const volumeData = processedData.map(d => ({
+      time: d.time,
+      value: d.volume || 0,
+      color: d.close >= d.open 
+        ? (isDark ? 'rgba(38, 166, 154, 0.5)' : 'rgba(38, 166, 154, 0.4)')
+        : (isDark ? 'rgba(239, 83, 80, 0.5)' : 'rgba(239, 83, 80, 0.4)')
+    }));
+    volumeSeries.setData(volumeData);
+
     chart.timeScale().fitContent();
     chartRef.current = chart;
 
@@ -86,4 +117,6 @@ export default function CandlestickChart({ data, height = 400 }: CandlestickChar
   }, [memoData, height]);
 
   return <div ref={containerRef} className="w-full" />;
-}
+});
+
+export default CandlestickChart;

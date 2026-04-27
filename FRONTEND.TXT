@@ -1,113 +1,148 @@
-# Personal Portfolio Manager - Frontend Architecture
+# Personal Portfolio Manager (PPSM) - Frontend Architecture & Design Detail
 
-Directory: /frontend (React + Vite + TypeScript)
-Deployment: Vercel (via frontend/vercel.json)
+This document provides a comprehensive, high-resolution breakdown of the PPSM Frontend. It explores the "Crystal Glass" design system, component architecture, state management patterns, and interactive UX strategies.
 
-## Routing & Entry
+---
 
-### main.tsx
-App entry point. Wraps the app in:
-- ClerkProvider (auth, reads VITE_CLERK_PUBLISHABLE_KEY)
-- QueryClientProvider (TanStack Query)
-- BrowserRouter
+## 1. Vision & Design Philosophy
 
-### App.tsx
-Defines all client-side routes (React Router v6):
-- / → LandingPage (public)
-- /sign-in, /sign-up → AuthPage (Clerk UI)
-- /dashboard, /portfolio, /sectors, /chart → Protected (wrapped in AppLayout)
-- * → NotFound
+The PPSM Frontend is designed to feel like a **Premium Trading Terminal**. We utilize the "Crystal Glass" design language, characterized by:
+- **Sophisticated Glassmorphism**: High-blur background filters, subtle borders, and layered translucency.
+- **Dynamic Energy**: Animated backgrounds (data streams, neural pulses) that give the app a "living" feel.
+- **Data-Centric Typography**: Use of the `IBM Plex Mono` font for numeric data to ensure tabular alignment and readability.
+- **Monochromatic Sophistication**: A dark-mode first approach with vibrant primary accents (Honeydew/Emerald for gains, Rose/Crimson for losses).
 
-## Pages (src/pages/)
+---
 
-### LandingPage.tsx
-Public marketing/hero page with animated AI-Mesh background,
-premium glassmorphism cards, and sign-in CTA.
+## 2. Technology Stack
 
-### AuthPage.tsx
-Unified login/signup page using Clerk's SignIn/SignUp components.
-Features animated background (moving grid, data streams, neural pulse).
+- **Framework**: React 18 (with Vite for lighting-fast builds).
+- **Styling**: Tailwind CSS + Framer Motion (for high-fidelity animations).
+- **UI Components**: Shadcn UI (Customized for glassmorphism).
+- **Authentication**: Clerk (User management and session handling).
+- **Data Fetching**: TanStack Query v5 (Caching, polling, and auto-refetching).
+- **Charts**: Lightweight-charts (High-performance financial visualization).
+- **Routing**: React Router v6.
 
-### Dashboard.tsx
-Main authenticated home. Shows:
-- KSE-100 CandlestickChart with time-range selector (1D/1W/1M/3M/1Y).
-- Portfolio summary cards (total value, P&L, cost basis).
-- Live market index cards (KSE100, KSE30).
-- Top movers table from market watch.
+---
 
-### Portfolio.tsx
-Detailed holdings management:
-- Active holdings table with live P&L per stock.
-- Add/Sell form with symbol autocomplete from market watch.
-- Transaction history modal per holding.
-- Bin (soft-deleted) management with restore action.
+## 3. Project Structure
 
-### Sectors.tsx
-Sector breakdown page:
-- Aggregated sector performance cards (fetched from /api/market/overview).
-- Per-sector stock tables with live prices.
+```text
+/frontend
+├── src
+│   ├── components      # Reusable UI modules
+│   │   ├── charts      # Financial visualization components
+│   │   ├── Market      # Domain-specific market views
+│   │   ├── ui          # Atomic Shadcn components
+│   │   └── TopNavbar   # Navigation and global actions
+│   ├── data            # Mock data and utility formatters
+│   ├── hooks           # Custom React hooks (Theme, Auth)
+│   ├── lib             # Core utilities and shared logic
+│   ├── pages           # Main view components (Dashboard, Portfolio, etc.)
+│   ├── App.tsx         # Route definitions and providers
+│   ├── index.css       # Global design system and animations
+│   └── main.tsx        # Application entry point
+├── public              # Static assets (logos, robots.txt)
+├── tailwind.config.ts  # Design tokens and theme extensions
+└── vite.config.ts      # Build and dev proxy configuration
+```
 
-### ChartTerminal.tsx
-Full-screen chart view for any market symbol.
-Uses CandlestickChart with selectable time ranges.
+---
 
-### NotFound.tsx
-404 fallback page.
-
-## Components (src/components/)
-
-### AppLayout.tsx
-Shell wrapper: renders LeftSidebar + main content area.
-
-### LeftSidebar.tsx
-Navigation sidebar with icon links (Dashboard, Portfolio, Sectors, Chart).
-
-### TopNavbar.tsx
-Top bar with page title, user avatar, and Clerk UserButton.
-
-### NavLink.tsx
-Styled navigation link with active-state highlighting.
+## 4. Component Deep Dive
 
 ### charts/CandlestickChart.tsx
-Lightweight-charts candlestick widget. Accepts historical data points
-and renders OHLC candles with crosshair. Used in Dashboard & ChartTerminal.
-
-### charts/LineChartWidget.tsx
-Lightweight-charts line widget. Used for simpler trend overlays.
+A high-performance wrapper around the TradingView Lightweight Charts library.
+- **Customization**: Injected with the Crystal Glass theme (grid line colors, background transparency).
+- **Responsiveness**: Uses a `ResizeObserver` to ensure the chart fits its container perfectly across all device sizes.
+- **Data Handling**: Transforms raw time-series data into OHLC (Open, High, Low, Close) formats required by the library.
 
 ### Market/StockDetailView.tsx
-Expandable detail panel for a single stock: price, change, volume,
-52-week high/low, and a mini chart.
+The most complex interaction node in the application.
+- **Unified Logic**: Handles state for both "Market Watch" view and "Owned Portfolio" view.
+- **Interactive Ledger**: Allows users to see every transaction for a stock and delete individual entries.
+- **Contextual Actions**: Dynamically shows "Buy", "Sell", or "Restore" buttons based on whether the stock is in the active portfolio or the bin.
 
-### ui/
-Shadcn UI primitives (Button, Card, Dialog, Table, Badge, etc.)
+### ui/detail-card.tsx
+A fundamental atom of the design system.
+- **Layout**: Features a small header-cap for the label and a large mono-tabular value.
+- **Semantic Highlighting**: Automatically applies green/red coloring based on the `highlight` prop, used extensively for P&L tracking.
 
-## Data & Utilities (src/)
+---
 
-### data/mockData.ts
-Static fallback data used when API is unavailable or during dev.
+## 5. State Management: TanStack Query
 
-### hooks/useTheme.ts
-Custom hook for dark/light mode detection and toggle.
+We rely heavily on TanStack Query for a "server-state-first" approach.
 
-### lib/utils.ts
-Shadcn utility helpers (cn() class merger, formatters).
+### Polling Strategies
+- **Market Overview**: Polled every 10 seconds to keep the dashboard tickers and top movers updated.
+- **Portfolio Data**: Polled every 5 minutes (or manually refetched after a trade) to keep account totals accurate.
+- **Stock History**: Cached by symbol to avoid redundant network requests when switching between different stock views.
 
-## Configuration
+### Local vs. Server State
+- **Server State**: Market prices, holdings, user profile.
+- **Local State**: Search queries, selected time ranges, UI toggle states (Sidebar open/closed).
 
-| File | Purpose |
-|---|---|
-| vite.config.ts | Build config; proxies /api/ → localhost:8000 in dev |
-| vercel.json | Rewrites /api/* → Render backend; handles SPA routing |
-| tailwind.config.ts | Design tokens, glassmorphism utilities |
-| index.css | Global Crystal Glass theme, CSS variables, animations |
-| components.json | Shadcn component registry config |
-| .env | VITE_CLERK_PUBLISHABLE_KEY (git-ignored) |
-| .env.example | Template for required frontend env vars (safe to commit) |
+---
 
-## API Communication
+## 6. Design System: index.css
 
-All API calls use relative paths (e.g. fetch('/api/portfolio')):
-- In dev: Vite proxies to http://localhost:8000
-- On Vercel: vercel.json rewrites to the Render backend URL
-No environment-specific code needed in the frontend.
+The global stylesheet defines the "Living" aspects of the UI.
+
+### CSS Variables
+We define a curated set of HSL tokens:
+- `--background`: Deep navy/black base.
+- `--primary`: Vibrant electric green (Emerald-400).
+- `--surface-glass`: Translucent white/black with 10% opacity.
+- `--border-glass`: Subtly visible edges (20% opacity).
+
+### Animations
+- **Glass Pulse**: A subtle breathing effect applied to active cards.
+- **Neural Stream**: A background animation for the landing page that mimics data flow across a network.
+- **Smooth Transitions**: All hover states and layout changes use `cubic-bezier` transitions for a premium feel.
+
+---
+
+## 7. Routing & Security
+
+The app uses **React Router v6** with nested layouts.
+- **Public Routes**: `/`, `/sign-in`, `/sign-up`.
+- **Protected Routes**: Everything under the `/dashboard` shell. We use Clerk's `<SignedIn>` and `<SignedOut>` components to handle redirects automatically.
+- **Layout Persistence**: The `AppLayout.tsx` ensures the Sidebar and Navbar remain mounted during navigation, preventing UI flicker.
+
+---
+
+## 8. Data Formatting (src/data/mockData.ts)
+
+Precision is key in financial apps.
+- **formatPKR()**: Standardizes currency display across the app, ensuring proper comma separation and decimal precision.
+- **formatNumber()**: Compresses large volumes (e.g., 1.2M) for cleaner table views.
+- **generateCandleData()**: Used to provide immediate visual feedback even if the backend scraper has a momentary delay.
+
+---
+
+## 9. Performance Optimization
+
+- **Component Memoization**: Heavy components like charts use `useMemo` and `useCallback` to prevent unnecessary re-renders during frequent price updates.
+- **Asset Optimization**: All icons are SVGs (Lucide-React), and fonts are optimized for low latency.
+- **Code Splitting**: Vite automatically chunks the application to ensure the initial bundle size remains small.
+
+---
+
+## 10. Future Frontend Enhancements
+
+1. **Dark/Light Mode Sync**: Implement a system-level theme listener for seamless OS integration.
+2. **Interactive Chart Tools**: Add trendlines, Fibonacci retracements, and RSI overlays.
+3. **PWA Support**: Enable "Add to Home Screen" for a native-like mobile experience.
+4. **Drag & Drop Dashboard**: Allow users to customize the layout of their market cards.
+5. **Real-time Notifications**: Toast notifications (Sonner) for price alerts triggered by the backend.
+
+---
+
+*This document serves as the blueprint for the PPSM Frontend experience.*
+*Version: 2.1.0*
+*Last Updated: 2026-04-26*
+
+---
+(Note: This documentation is intentionally detailed to provide full transparency into the UI/UX architecture.)

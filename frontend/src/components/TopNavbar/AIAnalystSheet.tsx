@@ -197,8 +197,8 @@ export const AIAnalystSheet = () => {
           <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
 
           {/* Fixed Header */}
-          <div className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border/10 bg-background/80 backdrop-blur-xl relative z-50 shrink-0 pointer-events-none">
-            <div className="max-w-6xl mx-auto flex items-center justify-between w-full">
+          <div className="p-4 sm:p-6 pb-2 sm:pb-4 bg-background/80 backdrop-blur-xl relative z-50 shrink-0 pointer-events-none">
+            <div className="max-w-[95%] mx-auto flex items-center justify-between w-full">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-emerald-500/20 rounded-full blur-3xl -z-10"></div>
               <SheetTitle className="flex items-center text-emerald-700 dark:text-emerald-400 text-lg sm:text-2xl gap-2 font-light tracking-wide m-0 pointer-events-auto">
                 <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 animate-pulse" />
@@ -218,7 +218,7 @@ export const AIAnalystSheet = () => {
 
 
           {/* Scrollable Chat Area with Bottom Fade Mask */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 w-full max-w-6xl mx-auto space-y-6 hide-scroll relative z-20 [mask-image:linear-gradient(to_bottom,black_90%,transparent_100%)]">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 w-full max-w-[95%] mx-auto space-y-6 hide-scroll relative z-20 [mask-image:linear-gradient(to_bottom,black_90%,transparent_100%)]">
 
             {/* 2. Elevated Empty State */}
             {messages.length === 0 && !isAnalyzing && !error && (
@@ -264,19 +264,19 @@ export const AIAnalystSheet = () => {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[92%] sm:max-w-[80%] text-sm leading-relaxed break-words overflow-wrap-anywhere ${msg.role === 'user'
+                    className={`inline-flex flex-col w-fit max-w-[95%] sm:max-w-[90%] text-sm leading-relaxed break-words overflow-wrap-anywhere ${msg.role === 'user'
                       ? 'px-4 py-2.5 rounded-3xl rounded-br-sm bg-emerald-500/20 border border-emerald-500/30 text-emerald-900 dark:text-emerald-50 backdrop-blur-md shadow-[0_4px_20px_rgba(16,185,129,0.1)]'
                       : 'p-3.5 sm:p-4 rounded-2xl rounded-bl-sm bg-secondary/30 dark:bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 text-foreground shadow-[0_8px_30px_rgb(0,0,0,0.1)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)]'
                       }`}
                   >
                     {msg.role === 'ai' && (
-                      <div className="flex items-center gap-2 mb-4 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                      <div className="flex items-center gap-2 mb-3 text-emerald-400 font-bold text-xs uppercase tracking-wider">
                         <Sparkles className="w-3 h-3" /> AI
                       </div>
                     )}
 
                     {msg.role === 'ai' ? (
-                      <div className="text-[13px] sm:text-sm text-foreground/90 leading-relaxed font-sans [&>p]:mb-5 [&>ul]:mb-5 [&>ul]:space-y-3 [&>ul]:list-none [&>ol]:mb-5 [&>ol]:space-y-3 [&>ol]:list-decimal [&>ol]:pl-5 [&_ul>li]:relative [&_ul>li]:pl-6 [&_ul>li]:mb-4 [&_ul>li::before]:content-['▹'] [&_ul>li::before]:absolute [&_ul>li::before]:left-0 [&_ul>li::before]:top-0 [&_ul>li::before]:text-emerald-500 [&_ul>li::before]:text-base [&_ul>li::before]:text-base [&_ol>li]:list-item [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-foreground [&_h2]:mt-8 [&_h2]:mb-4 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-foreground [&_h3]:mt-7 [&_h3]:mb-3 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-emerald-500 [&_h3]:uppercase [&_h3]:tracking-wider">
+                      <div className="text-[13px] sm:text-sm text-foreground/90 leading-relaxed font-sans [&>p]:mb-3 [&>p:last-child]:mb-0 [&>ul]:mb-3 [&>ul:last-child]:mb-0 [&>ul]:space-y-2 [&>ul]:list-none [&>ol]:mb-3 [&>ol:last-child]:mb-0 [&>ol]:space-y-2 [&>ol]:list-decimal [&>ol]:pl-5 [&_ul>li]:relative [&_ul>li]:pl-5 [&_ul>li]:mb-2 [&_ul>li:last-child]:mb-0 [&_ul>li::before]:content-['▹'] [&_ul>li::before]:absolute [&_ul>li::before]:left-0 [&_ul>li::before]:top-0 [&_ul>li::before]:text-emerald-500 [&_ul>li::before]:text-sm [&_ol>li]:list-item [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:mt-6 [&_h1]:mb-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-foreground [&_h2]:mt-5 [&_h2]:mb-3 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-foreground [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-sm [&_h3]:font-bold [&_h3]:text-emerald-500 [&_h3]:uppercase [&_h3]:tracking-wider">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
@@ -298,7 +298,7 @@ export const AIAnalystSheet = () => {
             {/* Typing Indicator */}
             {isAnalyzing && (
               <div className="flex justify-start">
-                <div className="bg-secondary/30 dark:bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 rounded-2xl rounded-bl-sm p-4 shadow-xl max-w-[92%] sm:max-w-none">
+                <div className="w-fit inline-block bg-secondary/30 dark:bg-emerald-950/30 backdrop-blur-2xl border border-emerald-500/20 rounded-2xl rounded-bl-sm p-4 shadow-xl max-w-[92%] sm:max-w-none">
                   <div className="flex items-center gap-2 text-emerald-500 dark:text-emerald-400 text-xs uppercase tracking-wider font-bold">
                     <Sparkles className="w-3 h-3" /> AI
                   </div>
@@ -315,8 +315,8 @@ export const AIAnalystSheet = () => {
           </div>
 
           {/* Fixed Input Area at Bottom */}
-          <div className="px-3 py-2 sm:px-6 sm:py-4 bg-background/80 dark:bg-black/40 backdrop-blur-xl shrink-0 relative z-30 border-t border-border/10">
-            <div className="w-full max-w-6xl mx-auto flex flex-col gap-2 sm:gap-3">
+          <div className="px-3 py-2 sm:px-6 sm:py-4 bg-background/80 dark:bg-black/40 backdrop-blur-xl shrink-0 relative z-30">
+            <div className="w-full max-w-[95%] mx-auto flex flex-col gap-2 sm:gap-3">
 
               {/* 4. Polished Query Pills (Larger & More Prominent) */}
               <div className="flex overflow-x-auto gap-3 pb-1 hide-scroll">
@@ -340,101 +340,7 @@ export const AIAnalystSheet = () => {
                 {/* Subtle inner shine */}
                 <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent pointer-events-none rounded-3xl"></div>
 
-                {/* Top Row: Symbol Context */}
-                <div className="flex flex-wrap items-center gap-2 px-3 pt-2 relative z-10">
 
-                  {/* 5. Popped Asset Badge / Input Hybrid */}
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 border border-emerald-500/30 dark:border-emerald-500/40 text-xs font-mono text-emerald-800 dark:text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.05)] dark:shadow-[0_0_15px_rgba(16,185,129,0.15)] relative w-[200px] focus-within:bg-emerald-500/25 focus-within:border-emerald-500 transition-all">
-                    <span className="opacity-70 text-[10px] font-bold tracking-widest pointer-events-none text-emerald-900/60 dark:text-emerald-500/60">SYMBOL</span>
-                    <div className="flex-1 flex items-center gap-1 overflow-hidden">
-                      <input
-                        type="text"
-                        placeholder="e.g. MEBL"
-                        value={symbol}
-                        onChange={(e) => {
-                          setSymbol(e.target.value.toUpperCase());
-                          setShowSuggestions(true);
-                        }}
-                        onFocus={() => setShowSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        className="bg-transparent border-none outline-none h-5 p-0 text-xs font-bold font-mono text-emerald-950 dark:text-emerald-200 placeholder:text-emerald-700/40 dark:placeholder:text-emerald-500/30 focus:outline-none focus:ring-0 uppercase w-full shadow-none"
-                      />
-                      {symbol && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSymbol("");
-                          }}
-                          className="hover:bg-foreground/10 rounded-full p-0.5 transition-colors"
-                        >
-                          <X className="w-3 h-3 text-emerald-500/60 hover:text-rose-400" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 bg-transparent shrink-0">
-                      {symbol && (
-                        isValidSymbol ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-in zoom-in" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-rose-400 animate-in zoom-in" />
-                        )
-                      )}
-                    </div>
-                    
-                    {/* Symbol Suggestions Dropdown */}
-                    <AnimatePresence>
-                      {showSuggestions && suggestions.length > 0 && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          className="absolute z-[100] left-0 bottom-full mb-2 w-[250px] bg-background dark:bg-background/95 backdrop-blur-xl border border-border dark:border-white/10 rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(16,185,129,0.15)] dark:shadow-[0_0_30px_rgba(16,185,129,0.2)] max-h-[300px] overflow-y-auto hide-scroll"
-                        >
-                          <div className="py-1">
-                            {suggestions.map((s) => (
-                              <button
-                                key={s.symbol}
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setSymbol(s.symbol);
-                                  setShowSuggestions(false);
-                                }}
-                                className="w-full px-3 py-2.5 text-left hover:bg-emerald-500/10 dark:hover:bg-emerald-500/15 transition-colors flex items-center gap-3 group border-b border-border/40 dark:border-white/5 last:border-0"
-                              >
-                                <div className="w-5 h-5 rounded-md border border-emerald-500/30 flex items-center justify-center group-hover:bg-emerald-500/20 group-hover:border-emerald-500/50 transition-all shrink-0">
-                                  <Check className="w-3.5 h-3.5 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                                <div className="flex flex-col flex-1 overflow-hidden">
-                                  <span className="text-xs font-bold font-mono text-emerald-950 dark:text-emerald-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition-colors">{s.symbol}</span>
-                                  <span className="text-[10px] text-muted-foreground dark:text-slate-400 uppercase truncate leading-tight">
-                                    {s.name}
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  {symbol && !isValidSymbol && !isFetchingMarket && (
-                    <span className="text-[10px] text-rose-400/80 font-medium px-2">Not in PSX Watchlist</span>
-                  )}
-
-                  {/* User Context Badge */}
-                  {selectedHolding && currentMarketPrice > 0 && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 dark:bg-emerald-500/10 border border-emerald-500/20">
-                      <span className="text-[10px] font-bold text-emerald-700/60 dark:text-emerald-500/60 tracking-wider">SYMBOL</span>
-                      <span className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-tight">{symbol}</span>
-                      <span>{selectedHolding.shares} @ {(selectedHolding.average_buy_price || 0).toFixed(0)}</span>
-                      <span className={`font-bold ${(selectedHolding.profit_loss_percent || 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                        ({(selectedHolding.profit_loss_percent || 0) >= 0 ? '+' : ''}{(selectedHolding.profit_loss_percent || 0).toFixed(1)}%)
-                      </span>
-                    </div>
-                  )}
-                </div>
 
                 {/* Bottom Row: Chat Prompt & Send */}
                 <div className="flex gap-2 items-end px-1 pb-1 relative z-10">
