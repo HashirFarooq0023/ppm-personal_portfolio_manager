@@ -11,3 +11,4 @@ openai
 ddgs
 beautifulsoup4
 pytz
+yfinance

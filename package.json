@@ -6,7 +6,7 @@
   "scripts": {
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && python main.py",
-    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"green,cyan\" \"npm run dev:backend\" \"wait-on http://127.0.0.1:8000/api/ping && npm run dev:frontend\""
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"green,cyan\" \"npm run dev:backend\" \"npx wait-on http://127.0.0.1:8000/api/ping && npm run dev:frontend\""
   },
   "keywords": [],
   "author": "",

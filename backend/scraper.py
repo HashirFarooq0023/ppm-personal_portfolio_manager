@@ -286,6 +286,72 @@ async def run_global_snapshot_task():
             
         await asyncio.sleep(1800) # 30 minutes (Ideal for PSX intraday granularity)
 
+async def fetch_psx_data_yfinance():
+    """
+    Fetches live PSX stock prices via Yahoo Finance API (.KA tickers).
+    Falls back to PSX Data Portal web scraper if yfinance is unavailable or fails.
+    """
+    import yfinance as yf
+
+    print("[BACKEND] Fetching live PSX prices via Yahoo Finance API (.KA tickers)...")
+    try:
+        symbols_list = list(FIXED_SYMBOLS)
+        ticker_query_str = " ".join([f"{sym}.KA" for sym in symbols_list])
+        tickers = yf.Tickers(ticker_query_str)
+
+        stocks = []
+        now = datetime.now(timezone.utc)
+
+        for sym in symbols_list:
+            ka_ticker = f"{sym}.KA"
+            try:
+                t = tickers.tickers.get(ka_ticker)
+                if not t:
+                    continue
+                fast_info = getattr(t, 'fast_info', None)
+                if not fast_info:
+                    continue
+                
+                price = fast_info.get('last_price') or fast_info.get('lastPrice') or 0.0
+                prev_close = fast_info.get('previous_close') or fast_info.get('previousClose') or price
+                day_high = fast_info.get('day_high') or fast_info.get('dayHigh') or price
+                day_low = fast_info.get('day_low') or fast_info.get('dayLow') or price
+                volume = fast_info.get('last_volume') or fast_info.get('lastVolume') or 0
+
+                if price and price > 0:
+                    change_pct = ((price - prev_close) / prev_close * 100.0) if prev_close > 0 else 0.0
+                    metadata = CURATED_COMPANIES.get(sym, {})
+                    clean_name = metadata.get("name", sym)
+                    clean_sector = metadata.get("sector", "MISCELLANEOUS")
+
+                    stocks.append(MarketWatch(
+                        symbol=sym,
+                        company_name=clean_name,
+                        sector=clean_sector,
+                        current_price=round(float(price), 2),
+                        change_percent=round(float(change_pct), 2),
+                        volume=int(volume),
+                        high=round(float(day_high), 2),
+                        low=round(float(day_low), 2),
+                        last_updated=now
+                    ))
+            except Exception:
+                continue
+
+        if stocks and len(stocks) >= len(symbols_list) * 0.3:
+            await upsert_market_watch(stocks)
+            await db.market_watch.delete_many({"symbol": {"$nin": list(FIXED_SYMBOLS)}})
+            print(f"=> INFO: Successfully updated {len(stocks)} symbols via Yahoo Finance (.KA)")
+            return True
+        else:
+            print("=> YFinance Warning: Low coverage. Falling back to PSX Scraper...")
+            await fetch_psx_data()
+            return False
+    except Exception as e:
+        print(f"=> YFinance API Error: {e}. Falling back to PSX Data Portal Scraper...")
+        await fetch_psx_data()
+        return False
+
 async def run_psx_scraper():
     """Background task with robust error handling and backoff."""
     print("PSX Scraper Background Task Started (5-minute loop)")
@@ -300,7 +366,8 @@ async def run_psx_scraper():
             # Sync static metadata once per loop (safe due to upsert)
             await seed_companies_metadata()
             
-            await fetch_psx_data()
+            # Primary: Yahoo Finance API (.KA), Fallback: BeautifulSoup Scraper
+            await fetch_psx_data_yfinance()
             fail_count = 0 # Reset on success
             await asyncio.sleep(1800) # 30 minutes
         except Exception as e:

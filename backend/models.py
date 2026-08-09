@@ -36,6 +36,43 @@ class Transaction(APIModel):
     action: str # "Buy" or "Sell"
     shares: int
     price: float
+    gross_amount: float = 0.0
+    brokerage_fee: float = 0.0
+    cgt_paid: float = 0.0
+    net_settled: float = 0.0
+
+# --- Dividend Model ---
+class Dividend(APIModel):
+    dividend_id: str
+    clerk_id: str
+    symbol: str
+    date_received: datetime = Field(default_factory=datetime.utcnow)
+    net_dividend: float
+
+class DividendAddRequest(APIModel):
+    symbol: str
+    date_received: Optional[datetime] = None
+    net_dividend: float
+
+# --- Account Settings & Reconciliation Models ---
+class AccountSettings(APIModel):
+    clerk_id: str
+    total_cash_deposited: float = 0.0
+    current_cash_balance: float = 0.0
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+
+class AccountSettingsUpdateRequest(APIModel):
+    total_cash_deposited: float
+    current_cash_balance: float
+
+class CashReconciliationResponse(APIModel):
+    total_cash_deposited: float
+    current_cash_balance: float
+    total_net_settled: float
+    total_dividends: float
+    calculated_cash_balance: float
+    discrepancy: float
+    is_reconciled: bool
 
 # --- Portfolio Model (Current State: Non-unbounded) ---
 class PortfolioItem(APIModel):
@@ -47,22 +84,43 @@ class PortfolioItem(APIModel):
     deleted_at: Optional[datetime] = None
     last_modified: datetime = Field(default_factory=datetime.utcnow)
 
+# --- User Broker Settings Models ---
+class UserSettings(APIModel):
+    clerk_id: str
+    broker_name: str = "JS Global"
+    fee_type: str = "Percentage"  # "Percentage" or "Flat_Per_Share"
+    fee_value: float = 0.15      # 0.15% or Rs. 0.05 per share
+    sales_tax_rate: float = 13.0 # Sindh Sales Tax (SST) 13%
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+
+class UserSettingsUpdateRequest(APIModel):
+    broker_name: str
+    fee_type: str
+    fee_value: float
+    sales_tax_rate: float
+
 class PortfolioAddRequest(APIModel):
     symbol: str
     action: str # "Buy" or "Sell"
     shares: int
     price: float
+    brokerage_fee: Optional[float] = None
+    cgt_paid: Optional[float] = 0.0
+    override_brokerage_fee: Optional[bool] = False
     reset_history: Optional[bool] = False
 
 class PortfolioResponseItem(APIModel):
     symbol: str
     shares: int
     average_buy_price: float
+    wabp: float = 0.0
     current_price: float
     total_cost: float
     total_value: float
     profit_loss: float
     profit_loss_percent: float
+    realized_profit: float = 0.0
+    total_dividends: float = 0.0
     transactions: List[Transaction] = Field(default_factory=list)
     deleted_at: Optional[datetime] = None
 
@@ -72,6 +130,9 @@ class PortfolioSummary(APIModel):
     total_value: float
     total_profit_loss: float
     total_profit_loss_percent: float
+    total_realized_profit: float = 0.0
+    total_dividends: float = 0.0
+    total_real_profit: float = 0.0
 
 class PortfolioHistoryPoint(APIModel):
     clerk_id: str

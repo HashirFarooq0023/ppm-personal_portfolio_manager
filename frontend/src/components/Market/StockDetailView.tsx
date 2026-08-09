@@ -182,90 +182,107 @@ export default function StockDetailView({
         <div className="space-y-4">
           <h3 className="font-semibold text-lg flex items-center gap-2 px-1">
             <ReceiptText className="w-4 h-4 text-psx-green" />
-            Your Position
+            Your Position & Performance Metrics
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
             <DetailCard label="Shares Owned" value={portfolioHolding.shares.toString()} />
             <DetailCard label="Avg Buy Price" value={formatPKR(portfolioHolding.averageBuyPrice)} />
-            <DetailCard label="Total Cost" value={formatPKR(portfolioHolding.totalCost)} />
+            <DetailCard label="WABP (Weighted)" value={formatPKR(portfolioHolding.wabp || portfolioHolding.averageBuyPrice)} />
             <DetailCard label="Current Value" value={formatPKR(portfolioHolding.totalValue)} />
             <DetailCard 
-              label="Net P/L" 
+              label="Unrealized P/L" 
               value={`${portfolioHolding.profitLoss >= 0 ? '+' : ''}${formatPKR(portfolioHolding.profitLoss)}`} 
               highlight={portfolioHolding.profitLoss >= 0 ? 'green' : 'red'}
             />
             <DetailCard 
-              label="Net P/L %" 
-              value={`${portfolioHolding.profitLossPercent >= 0 ? '+' : ''}${portfolioHolding.profitLossPercent.toFixed(2)}%`} 
-              highlight={portfolioHolding.profitLossPercent >= 0 ? 'green' : 'red'}
+              label="Realized P/L" 
+              value={`${portfolioHolding.realizedProfit >= 0 ? '+' : ''}${formatPKR(portfolioHolding.realizedProfit || 0)}`} 
+              highlight={(portfolioHolding.realizedProfit || 0) >= 0 ? 'green' : 'red'}
+            />
+            <DetailCard 
+              label="Dividends" 
+              value={formatPKR(portfolioHolding.totalDividends || 0)} 
+              highlight="green"
             />
           </div>
 
           {/* Transaction Ledger */}
           <div className="glass rounded-2xl overflow-hidden mt-6">
-            <div className="px-6 py-4 border-b border-white/5 bg-white/5">
-              <h4 className="font-medium">Transaction Ledger</h4>
+            <div className="px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+              <h4 className="font-medium">Detailed Transaction Ledger (Columns A - I)</h4>
+              <span className="text-xs text-muted-foreground font-mono-tabular">{portfolioHolding.transactions?.length || 0} Trades</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-muted-foreground bg-white/5">
+              <table className="w-full text-left text-xs">
+                <thead className="text-muted-foreground bg-white/5 uppercase">
                   <tr>
-                    <th className="px-6 py-3 font-medium text-right w-[44px]"> </th>
-                    <th className="px-6 py-3 font-medium">Date</th>
-                    <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium text-right">Qty</th>
-                    <th className="px-6 py-3 font-medium text-right">Price</th>
+                    <th className="px-4 py-3 font-medium text-right w-[44px]"> </th>
+                    <th className="px-4 py-3 font-medium">Date</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                    <th className="px-4 py-3 font-medium text-right">Qty</th>
+                    <th className="px-4 py-3 font-medium text-right">Price</th>
+                    <th className="px-4 py-3 font-medium text-right">Gross Amount</th>
+                    <th className="px-4 py-3 font-medium text-right">Brokerage Fee</th>
+                    <th className="px-4 py-3 font-medium text-right">CGT Paid</th>
+                    <th className="px-4 py-3 font-medium text-right">Net Settled</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {portfolioHolding.transactions?.map((txn: any, i: number) => (
-                    <tr key={i} className="hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-3 text-right">
-                        {/*
-                          If this ledger has only 1 transaction, deleting it should delete the whole holding.
-                          Otherwise we delete the individual transaction (needs transactionId).
-                        */}
-                        {(() => {
-                          const txnId = txn.transactionId ?? txn.transaction_id;
-                          const canDeleteCompany = txnCount <= 1 && !!onDelete;
-                          const canDeleteTxn = txnCount > 1 && !!onDeleteTransaction && !!txnId;
-                          const disabled = !(canDeleteCompany || canDeleteTxn);
+                  {portfolioHolding.transactions?.map((txn: any, i: number) => {
+                    const gross = txn.grossAmount ?? txn.gross_amount ?? (txn.shares * txn.price);
+                    const fee = txn.brokerageFee ?? txn.brokerage_fee ?? 0;
+                    const cgt = txn.cgtPaid ?? txn.cgt_paid ?? 0;
+                    const netSettled = txn.netSettled ?? txn.net_settled ?? (
+                      txn.action === 'Buy' ? -(gross + fee) : (gross - fee - cgt)
+                    );
 
-                          return (
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg glass hover:bg-destructive/10 text-psx-red transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
-                          title="Delete transaction"
-                          disabled={disabled}
-                          onClick={(e) => {
-                            e.stopPropagation();
+                    return (
+                      <tr key={i} className="hover:bg-white/5 transition-colors font-mono-tabular">
+                        <td className="px-4 py-3 text-right">
+                          {(() => {
+                            const txnId = txn.transactionId ?? txn.transaction_id;
+                            const canDeleteCompany = txnCount <= 1 && !!onDelete;
+                            const canDeleteTxn = txnCount > 1 && !!onDeleteTransaction && !!txnId;
+                            const disabled = !(canDeleteCompany || canDeleteTxn);
 
-                            // If this is the only transaction, delete the whole company/holding.
-                            if (txnCount <= 1) {
-                              if (!onDelete) return;
-                              onDelete();
-                              return;
-                            }
-
-                            // Otherwise delete just this transaction (requires transactionId).
-                            if (txnId && onDeleteTransaction) {
-                              onDeleteTransaction(txnId);
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-6 py-3 text-muted-foreground">{new Date(txn.date).toLocaleDateString()}</td>
-                      <td className={`px-6 py-3 font-medium ${txn.action === 'Buy' ? 'text-psx-green' : 'text-psx-red'}`}>
-                        {txn.action}
-                      </td>
-                      <td className="px-6 py-3 text-right font-mono-tabular">{txn.shares}</td>
-                      <td className="px-6 py-3 text-right font-mono-tabular">{formatPKR(txn.price)}</td>
-                    </tr>
-                  ))}
+                            return (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-lg glass hover:bg-destructive/10 text-psx-red transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+                                title="Delete transaction"
+                                disabled={disabled}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (txnCount <= 1) {
+                                    if (!onDelete) return;
+                                    onDelete();
+                                    return;
+                                  }
+                                  if (txnId && onDeleteTransaction) {
+                                    onDeleteTransaction(txnId);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{new Date(txn.date).toLocaleDateString()}</td>
+                        <td className={`px-4 py-3 font-bold uppercase font-sans ${txn.action === 'Buy' ? 'text-psx-green' : 'text-psx-red'}`}>
+                          {txn.action}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium">{txn.shares}</td>
+                        <td className="px-4 py-3 text-right">{formatPKR(txn.price)}</td>
+                        <td className="px-4 py-3 text-right text-foreground font-semibold">{formatPKR(gross)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{formatPKR(fee)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">{formatPKR(cgt)}</td>
+                        <td className={`px-4 py-3 text-right font-extrabold ${netSettled >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
+                          {formatPKR(netSettled)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -1,19 +1,24 @@
 import { useState, useMemo, useEffect } from 'react';
 import { formatPKR, watchlistStocks, generateCandleData, TOP_PSX_SYMBOLS } from '@/data/mockData';
 import CandlestickChart from '@/components/charts/CandlestickChart';
-// --- [ NEW ] | Added Wallet, Briefcase, and Activity icons for the summary cards ---
-import { Plus, X, ArrowLeft, Loader2, Trash2, AlertTriangle, TrendingUp, TrendingDown, ArchiveRestore, History, Check, Wallet, Briefcase, Activity } from 'lucide-react';
+// --- [ NEW ] | Added Wallet, Briefcase, Activity, DollarSign, Scale, and Settings icons ---
+import { Plus, X, ArrowLeft, Loader2, Trash2, AlertTriangle, TrendingUp, TrendingDown, ArchiveRestore, History, Check, Wallet, Briefcase, Activity, DollarSign, Scale, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-react';
 import StockDetailView from '@/components/Market/StockDetailView';
 import { DetailCard } from '@/components/ui/detail-card';
+import DividendTracker from '@/components/DividendTracker';
+import CashReconciliationWidget from '@/components/CashReconciliationWidget';
+import BrokerSettingsModal from '@/components/BrokerSettingsModal';
 
 export default function Portfolio() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<'holdings' | 'dividends' | 'audit'>('holdings');
   const [showModal, setShowModal] = useState(false);
+  const [showBrokerSettings, setShowBrokerSettings] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [deleteSymbol, setDeleteSymbol] = useState<string | null>(null); 
   const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null);
@@ -51,7 +56,7 @@ export default function Portfolio() {
 
   // Add Trade Mutation
   const addTradeMutation = useMutation({
-    mutationFn: async (trade: { symbol: string; action: string; shares: number; price: number }) => {
+    mutationFn: async (trade: { symbol: string; action: string; shares: number; price: number; brokerage_fee?: number; cgt_paid?: number; override_brokerage_fee?: boolean; reset_history?: boolean }) => {
       const token = await getToken();
       const res = await fetch('/api/portfolio', {
         method: 'POST',
@@ -66,6 +71,7 @@ export default function Portfolio() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
       setShowModal(false);
     }
   });
@@ -84,6 +90,7 @@ export default function Portfolio() {
     onSuccess: (_, deletedSymbol) => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['portfolio', 'bin'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
       setDeleteSymbol(null);
       if (selectedSymbol === deletedSymbol) setSelectedSymbol(null);
     }
@@ -102,6 +109,7 @@ export default function Portfolio() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
       setDeleteTransactionId(null);
     }
   });
@@ -120,6 +128,7 @@ export default function Portfolio() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['portfolio', 'bin'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
     }
   });
 
@@ -136,6 +145,7 @@ export default function Portfolio() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio', 'bin'] });
+      queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
       setShowEmptyBinConfirm(false);
     }
   });
@@ -150,8 +160,6 @@ export default function Portfolio() {
       ? selectedHolding.transactions.find((t: any) => (t.transactionId ?? t.transaction_id) === deleteTransactionId)
       : null;
 
-  // --- [ NEW ] | Safe Summary Calculation Logic ---
-  // Calculates totals natively to ensure accuracy even if the backend payload shape changes
   const calculatedTotalCost = holdings.reduce((sum: number, h: any) => sum + (h.totalCost || 0), 0);
   const calculatedTotalValue = holdings.reduce((sum: number, h: any) => sum + (h.totalValue || 0), 0);
   const calculatedTotalPL = calculatedTotalValue - calculatedTotalCost;
@@ -161,7 +169,10 @@ export default function Portfolio() {
     cost: portfolioData?.totalCost ?? calculatedTotalCost,
     value: portfolioData?.totalValue ?? calculatedTotalValue,
     pl: portfolioData?.totalProfitLoss ?? calculatedTotalPL,
-    plPercent: portfolioData?.totalProfitLossPercent ?? calculatedTotalPLPercent
+    plPercent: portfolioData?.totalProfitLossPercent ?? calculatedTotalPLPercent,
+    realizedPL: portfolioData?.totalRealizedProfit ?? 0,
+    dividends: portfolioData?.totalDividends ?? 0,
+    realProfit: portfolioData?.totalRealProfit ?? 0
   };
   const isTotalPositive = summary.pl >= 0;
 
@@ -182,128 +193,213 @@ export default function Portfolio() {
         />
       ) : (
         <>
-          {/* Header */}
-          <div className="flex items-center justify-between">
+          {/* Header & Tabs */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div>
                 <h1 className="text-2xl md:text-3xl font-extrabold text-text-primary tracking-tight">My Portfolio</h1>
-                <p className="text-xs font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">Tap a tile to view detailed breakdown</p>
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-[0.15em] mt-1">PSX Tracking & Reconciliation Terminal</p>
               </div>
               {isLoading && <Loader2 className="w-5 h-5 animate-spin text-primary/40" />}
             </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => setShowBrokerSettings(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-input/40 border border-border/40 text-foreground text-xs font-bold rounded-lg hover:bg-input/70 transition-all shrink-0"
+                title="Broker Fee & Commission Settings"
+              >
+                <Settings className="w-3.5 h-3.5 text-psx-green" />
+                Broker Fees
+              </button>
+
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-body font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 shrink-0"
+              >
+                <Plus className="w-4 h-4" strokeWidth={1.5} />
+                Add Trade
+              </button>
+            </div>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex border-b border-border/20 space-x-4">
             <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-body font-medium rounded-lg hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+              onClick={() => setActiveTab('holdings')}
+              className={`py-2.5 px-1 font-semibold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'holdings'
+                  ? 'border-psx-green text-psx-green'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
             >
-              <Plus className="w-4 h-4" strokeWidth={1.5} />
-              Add Trade
+              <Briefcase className="w-4 h-4" />
+              Holdings & Ledger
+            </button>
+            <button
+              onClick={() => setActiveTab('dividends')}
+              className={`py-2.5 px-1 font-semibold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'dividends'
+                  ? 'border-psx-green text-psx-green'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <DollarSign className="w-4 h-4" />
+              Dividend Tracker
+            </button>
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`py-2.5 px-1 font-semibold text-sm border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'audit'
+                  ? 'border-psx-green text-psx-green'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Scale className="w-4 h-4" />
+              Zero Balance Audit
             </button>
           </div>
 
-          {/* --- [ NEW ] | Portfolio Summary Grid --- */}
-          {holdings.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 my-6">
-              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <Wallet className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Total Investment</span>
-                </div>
-                <span className="text-base md:text-xl font-bold font-mono-tabular text-text-primary">{formatPKR(summary.cost)}</span>
-              </div>
-
-              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <Briefcase className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Current Value</span>
-                </div>
-                <span className="text-base md:text-xl font-bold font-mono-tabular text-primary">{formatPKR(summary.value)}</span>
-              </div>
-
-              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <Activity className="w-4 h-4 text-primary" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Total P&L</span>
-                </div>
-                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
-                  {isTotalPositive ? '+' : ''}{formatPKR(summary.pl)}
-                </span>
-              </div>
-
-              <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
-                <div className="flex items-center gap-2 text-text-secondary">
-                  {isTotalPositive ? <TrendingUp className="w-4 h-4 text-psx-green" /> : <TrendingDown className="w-4 h-4 text-psx-red" />}
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Overall Return</span>
-                </div>
-                <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
-                  {isTotalPositive ? '▲' : '▼'} {Math.abs(summary.plPercent).toFixed(2)}%
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Tiles Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-            {holdings.map((h: any) => (
-              <PortfolioTile
-                key={h.symbol}
-                holding={h}
-                onClick={() => setSelectedSymbol(h.symbol)}
-                onDelete={() => setDeleteSymbol(h.symbol)}
-              />
-            ))}
-          </div>
-
-          {/* Bin Section (Recently Deleted) */}
-          {binItems.length > 0 && (
-            <div className="mt-12 pt-8 border-t border-border/50">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <History className="w-4 h-4" />
-                  <h2 className="text-subheader font-semibold">Recently Deleted</h2>
-                  <span className="text-label px-2 py-0.5 rounded-full bg-muted">{binItems.length}</span>
-                </div>
-                
-                <button
-                  onClick={() => setShowEmptyBinConfirm(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-psx-red hover:bg-destructive/10 transition-colors text-label font-medium"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Empty Bin
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 opacity-70 grayscale-[0.5] hover:grayscale-0 transition-all">
-                {binItems.map((h: any) => (
-                  <div 
-                    key={h.symbol} 
-                    className="glass rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors"
-                    onClick={() => setSelectedSymbol(h.symbol)}
-                  >
-                    <div>
-                      <div className="font-semibold">{h.symbol}</div>
-                      <div className="text-label text-muted-foreground">Deleted {new Date(h.deletedAt).toLocaleTimeString()}</div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        restoreMutation.mutate(h.symbol);
-                      }}
-                      disabled={restoreMutation.isPending}
-                      className="p-2 rounded-lg bg-psx-green/10 text-psx-green hover:bg-psx-green/20 transition-colors flex items-center gap-1.5 text-label font-medium"
-                    >
-                      <ArchiveRestore className="w-4 h-4" />
-                      Restore
-                    </button>
+          {/* Tab Content 1: Holdings */}
+          {activeTab === 'holdings' && (
+            <>
+              {/* Portfolio Summary Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 my-6">
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                  <div className="flex items-center gap-2 text-text-secondary">
+                    <Wallet className="w-4 h-4 text-primary" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Total Investment</span>
                   </div>
+                  <span className="text-base md:text-xl font-bold font-mono-tabular text-text-primary">{formatPKR(summary.cost)}</span>
+                </div>
+
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                  <div className="flex items-center gap-2 text-text-secondary">
+                    <Briefcase className="w-4 h-4 text-primary" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Current Value</span>
+                  </div>
+                  <span className="text-base md:text-xl font-bold font-mono-tabular text-primary">{formatPKR(summary.value)}</span>
+                </div>
+
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                  <div className="flex items-center gap-2 text-text-secondary">
+                    <Activity className="w-4 h-4 text-primary" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Unrealized P&L</span>
+                  </div>
+                  <span className={`text-base md:text-xl font-bold font-mono-tabular ${isTotalPositive ? 'text-psx-green' : 'text-psx-red'}`}>
+                    {isTotalPositive ? '+' : ''}{formatPKR(summary.pl)}
+                  </span>
+                </div>
+
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                  <div className="flex items-center gap-2 text-text-secondary">
+                    <TrendingUp className="w-4 h-4 text-psx-green" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Realized Trading</span>
+                  </div>
+                  <span className={`text-base md:text-xl font-bold font-mono-tabular ${summary.realizedPL >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
+                    {summary.realizedPL >= 0 ? '+' : ''}{formatPKR(summary.realizedPL)}
+                  </span>
+                </div>
+
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60">
+                  <div className="flex items-center gap-2 text-text-secondary">
+                    <DollarSign className="w-4 h-4 text-psx-green" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Total Dividends</span>
+                  </div>
+                  <span className="text-base md:text-xl font-bold font-mono-tabular text-psx-green">
+                    +{formatPKR(summary.dividends)}
+                  </span>
+                </div>
+
+                <div className="glass-strong rounded-xl p-4 flex flex-col gap-1.5 border border-border/60 bg-psx-green/5 border-psx-green/30">
+                  <div className="flex items-center gap-2 text-psx-green">
+                    <Scale className="w-4 h-4" />
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest">Total Real Profit</span>
+                  </div>
+                  <span className={`text-base md:text-xl font-extrabold font-mono-tabular ${summary.realProfit >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
+                    {summary.realProfit >= 0 ? '+' : ''}{formatPKR(summary.realProfit)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tiles Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                {holdings.map((h: any) => (
+                  <PortfolioTile
+                    key={h.symbol}
+                    holding={h}
+                    onClick={() => setSelectedSymbol(h.symbol)}
+                    onDelete={() => setDeleteSymbol(h.symbol)}
+                  />
                 ))}
               </div>
-            </div>
+
+              {/* Bin Section (Recently Deleted) */}
+              {binItems.length > 0 && (
+                <div className="mt-12 pt-8 border-t border-border/50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <History className="w-4 h-4" />
+                      <h2 className="text-subheader font-semibold">Recently Deleted</h2>
+                      <span className="text-label px-2 py-0.5 rounded-full bg-muted">{binItems.length}</span>
+                    </div>
+                    
+                    <button
+                      onClick={() => setShowEmptyBinConfirm(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-psx-red hover:bg-destructive/10 transition-colors text-label font-medium"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Empty Bin
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 opacity-70 grayscale-[0.5] hover:grayscale-0 transition-all">
+                    {binItems.map((h: any) => (
+                      <div 
+                        key={h.symbol} 
+                        className="glass rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors"
+                        onClick={() => setSelectedSymbol(h.symbol)}
+                      >
+                        <div>
+                          <div className="font-semibold">{h.symbol}</div>
+                          <div className="text-label text-muted-foreground">Deleted {new Date(h.deletedAt).toLocaleTimeString()}</div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            restoreMutation.mutate(h.symbol);
+                          }}
+                          disabled={restoreMutation.isPending}
+                          className="p-2 rounded-lg bg-psx-green/10 text-psx-green hover:bg-psx-green/20 transition-colors flex items-center gap-1.5 text-label font-medium"
+                        >
+                          <ArchiveRestore className="w-4 h-4" />
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Tab Content 2: Dividends */}
+          {activeTab === 'dividends' && (
+            <DividendTracker />
+          )}
+
+          {/* Tab Content 3: Zero-Balance Audit */}
+          {activeTab === 'audit' && (
+            <CashReconciliationWidget />
           )}
         </>
       )}
 
       {/* Modals Container (Global) */}
       <AnimatePresence>
+        {showBrokerSettings && (
+          <BrokerSettingsModal onClose={() => setShowBrokerSettings(false)} />
+        )}
         {showModal && (
           <AddTradeModal
             onClose={() => setShowModal(false)}
@@ -471,9 +567,25 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
   const [action, setAction] = useState('Buy');
   const [shares, setShares] = useState('');
   const [price, setPrice] = useState('');
+  const [brokerageFee, setBrokerageFee] = useState('');
+  const [cgtPaid, setCgtPaid] = useState('');
+  const [overrideFee, setOverrideFee] = useState(false);
   const [resetHistory, setResetHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Fetch User Brokerage Settings
+  const { data: userSettings } = useQuery({
+    queryKey: ['userSettings'],
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch('/api/user/settings', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return null;
+      return res.json();
+    }
+  });
 
   // Check if current symbol is in bin
   const isBinned = useMemo(() => {
@@ -493,12 +605,30 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
     ).slice(0, 50);
   }, [symbol]);
 
+  const parsedShares = parseInt(shares) || 0;
+  const parsedPrice = parseFloat(price) || 0;
+  const estimatedGross = parsedShares * parsedPrice;
+
+  // Auto-calculated fee based on user's broker settings
+  const autoFee = useMemo(() => {
+    if (!userSettings) return 0;
+    const fType = userSettings.fee_type || 'Percentage';
+    const fVal = userSettings.fee_value !== undefined ? userSettings.fee_value : 0.15;
+    const taxRate = userSettings.sales_tax_rate !== undefined ? userSettings.sales_tax_rate : 13.0;
+
+    const base = fType === 'Percentage' ? estimatedGross * (fVal / 100.0) : parsedShares * fVal;
+    const tax = base * (taxRate / 100.0);
+    return Math.round((base + tax) * 100) / 100;
+  }, [userSettings, estimatedGross, parsedShares]);
+
+  const activeFee = overrideFee ? (parseFloat(brokerageFee) || 0) : autoFee;
+  const cgt = parseFloat(cgtPaid) || 0;
+  const estimatedNet = action === 'Buy' ? -(estimatedGross + activeFee) : (estimatedGross - activeFee - cgt);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const parsedShares = parseInt(shares);
-    const parsedPrice = parseFloat(price);
     const upperSymbol = symbol.toUpperCase();
 
     if (!upperSymbol || !parsedShares || !parsedPrice || isPending) return;
@@ -543,6 +673,9 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
       action, 
       shares: parsedShares, 
       price: parsedPrice,
+      brokerage_fee: activeFee,
+      cgt_paid: action === 'Sell' ? cgt : 0,
+      override_brokerage_fee: overrideFee,
       reset_history: resetHistory 
     });
   };
@@ -601,13 +734,13 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
             <input
               value={symbol}
               onChange={e => {
-                setSymbol(e.target.value);
+                setSymbol(e.target.value.toUpperCase());
                 setShowSuggestions(true);
               }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               placeholder="e.g. SYS"
-              className="w-full h-9 px-3 text-body bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors uppercase"
+              className="w-full h-9 px-3 text-body bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors uppercase font-bold"
             />
 
             {/* Symbol Suggestions Dropdown */}
@@ -646,12 +779,14 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
               )}
             </AnimatePresence>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-label text-muted-foreground block mb-1.5">Quantity</label>
               <input
                 type="number"
                 min="1"
+                required
                 value={shares}
                 onChange={e => setShares(e.target.value)}
                 placeholder="100"
@@ -664,12 +799,72 @@ function AddTradeModal({ onClose, onAdd, isPending, currentHoldings, binItems = 
                 type="number"
                 step="0.01"
                 min="0.01"
+                required
                 value={price}
                 onChange={e => setPrice(e.target.value)}
                 placeholder="450.50"
                 className="w-full h-9 px-3 text-body bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono-tabular"
               />
             </div>
+          </div>
+
+          {/* Fee Override Toggle & Calculation Inputs */}
+          <div className="space-y-2 pt-1 border-t border-border/20">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={overrideFee}
+                  onChange={(e) => setOverrideFee(e.target.checked)}
+                  className="rounded border-border/50 text-psx-green focus:ring-psx-green"
+                />
+                <span>Override Default Brokerage Fee</span>
+              </label>
+              <span className="text-[10px] text-muted-foreground">
+                {userSettings?.broker_name || 'JS Global'} ({userSettings?.fee_type === 'Flat_Per_Share' ? `Rs. ${userSettings?.fee_value}/sh` : `${userSettings?.fee_value || 0.15}%`} + {userSettings?.sales_tax_rate || 13}% SST)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-label text-muted-foreground block mb-1.5">
+                  Brokerage Fee (Rs.)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  disabled={!overrideFee}
+                  value={overrideFee ? brokerageFee : (autoFee > 0 ? String(autoFee) : '')}
+                  onChange={e => setBrokerageFee(e.target.value)}
+                  placeholder={!overrideFee ? (autoFee > 0 ? formatPKR(autoFee) : "Auto Calculated") : "Manual Fee Rs."}
+                  className="w-full h-9 px-3 text-body bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono-tabular disabled:opacity-75 disabled:bg-input/20 font-semibold"
+                />
+              </div>
+              <div>
+                <label className={`text-label block mb-1.5 ${action === 'Sell' ? 'text-psx-red font-semibold' : 'text-muted-foreground'}`}>
+                  CGT Paid (Rs.) {action === 'Buy' ? '(Sell Only)' : '*'}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  disabled={action === 'Buy'}
+                  value={action === 'Buy' ? '' : cgtPaid}
+                  onChange={e => setCgtPaid(e.target.value)}
+                  placeholder={action === 'Sell' ? "NCCPL CGT deduction" : "N/A"}
+                  className="w-full h-9 px-3 text-body bg-input/50 border border-border/50 rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono-tabular disabled:opacity-40"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Net Settled Calculation Preview */}
+          <div className="p-3 bg-white/5 border border-border/30 rounded-lg flex items-center justify-between font-mono-tabular text-xs">
+            <span className="text-muted-foreground">Estimated Net Settled:</span>
+            <span className={`font-bold ${estimatedNet >= 0 ? 'text-psx-green' : 'text-psx-red'}`}>
+              {formatPKR(estimatedNet)}
+            </span>
           </div>
 
           {isBinned && action === 'Buy' && (

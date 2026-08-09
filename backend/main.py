@@ -9,7 +9,8 @@ from fastapi.responses import RedirectResponse
 
 from models import (
     PortfolioSummary, PortfolioAddRequest, MarketIndex, MarketWatch, MarketOverview, PortfolioResponseItem,
-    AIAnalysisRequest, AIAnalysisResponse
+    AIAnalysisRequest, AIAnalysisResponse, Dividend, DividendAddRequest, AccountSettingsUpdateRequest, CashReconciliationResponse,
+    UserSettings, UserSettingsUpdateRequest
 )
 from service import (
     get_user_portfolio, add_or_update_holding, delete_holding, 
@@ -17,7 +18,8 @@ from service import (
     get_deleted_holdings, restore_holding, get_index_history, get_symbol_history_ohlc,
     generate_stock_analysis, empty_bin_items, delete_transaction,
     record_market_snapshot, record_all_portfolios_snapshot,
-    ensure_indexes
+    ensure_indexes, get_user_dividends, add_user_dividend, delete_user_dividend,
+    get_cash_reconciliation, update_account_settings, get_user_settings, update_user_settings
 )
 from scraper import run_psx_scraper, fetch_psx_data, run_global_snapshot_task
 
@@ -46,7 +48,7 @@ async def run_history_task():
 
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="PPM Backend", lifespan=lifespan)
+app = FastAPI(title="PPM Backend - PSX & Broker Fee Powered", lifespan=lifespan)
 
 # --- CORS Setup ---
 # Read origins from env var (comma-separated), with safe local defaults.
@@ -129,16 +131,36 @@ async def get_portfolio(clerk_id: str = Depends(get_current_user)):
 
 @app.post("/api/portfolio")
 async def add_portfolio(request: PortfolioAddRequest, clerk_id: str = Depends(get_current_user)):
-    """Protected: Adds or updates a stock holding."""
+    """Protected: Adds or updates a stock holding with fee calculations."""
     await add_or_update_holding(
         clerk_id=clerk_id,
         symbol=request.symbol,
         action=request.action,
         shares=request.shares,
         price=request.price,
+        brokerage_fee=request.brokerage_fee,
+        cgt_paid=request.cgt_paid or 0.0,
+        override_brokerage_fee=request.override_brokerage_fee or False,
         reset_history=request.reset_history
     )
     return {"status": "success", "message": f"Updated {request.symbol} in portfolio."}
+
+# --- User Settings Endpoints ---
+@app.get("/api/user/settings", response_model=UserSettings)
+async def fetch_user_settings(clerk_id: str = Depends(get_current_user)):
+    """Protected: Returns user broker settings & commission profile."""
+    return await get_user_settings(clerk_id)
+
+@app.post("/api/user/settings", response_model=UserSettings)
+async def save_user_settings(request: UserSettingsUpdateRequest, clerk_id: str = Depends(get_current_user)):
+    """Protected: Updates user broker settings & commission profile."""
+    return await update_user_settings(
+        clerk_id=clerk_id,
+        broker_name=request.broker_name,
+        fee_type=request.fee_type,
+        fee_value=request.fee_value,
+        sales_tax_rate=request.sales_tax_rate
+    )
 
 @app.delete("/api/portfolio/{symbol}")
 async def remove_holding(symbol: str, clerk_id: str = Depends(get_current_user)):
@@ -151,6 +173,44 @@ async def delete_portfolio_transaction(transaction_id: str, clerk_id: str = Depe
     """Protected: Deletes a single transaction from the ledger and recomputes totals."""
     await delete_transaction(clerk_id, transaction_id)
     return {"status": "success", "message": "Transaction deleted."}
+
+# --- Dividend Endpoints ---
+@app.get("/api/dividends", response_model=List[Dividend])
+async def get_dividends(clerk_id: str = Depends(get_current_user)):
+    """Protected: Returns user dividend history."""
+    return await get_user_dividends(clerk_id)
+
+@app.post("/api/dividends", response_model=Dividend)
+async def create_dividend(request: DividendAddRequest, clerk_id: str = Depends(get_current_user)):
+    """Protected: Adds a dividend record."""
+    return await add_user_dividend(
+        clerk_id=clerk_id,
+        symbol=request.symbol,
+        net_dividend=request.net_dividend,
+        date_received=request.date_received
+    )
+
+@app.delete("/api/dividends/{dividend_id}")
+async def remove_dividend(dividend_id: str, clerk_id: str = Depends(get_current_user)):
+    """Protected: Deletes a dividend record."""
+    await delete_user_dividend(clerk_id, dividend_id)
+    return {"status": "success", "message": "Dividend record deleted."}
+
+# --- Zero-Balance Cash Reconciliation Endpoints ---
+@app.get("/api/account/reconciliation", response_model=CashReconciliationResponse)
+async def get_reconciliation(clerk_id: str = Depends(get_current_user)):
+    """Protected: Returns zero-balance cash reconciliation audit."""
+    return await get_cash_reconciliation(clerk_id)
+
+@app.post("/api/account/reconciliation", response_model=CashReconciliationResponse)
+async def save_account_settings(request: AccountSettingsUpdateRequest, clerk_id: str = Depends(get_current_user)):
+    """Protected: Updates total cash deposited and current cash balance, returning live audit."""
+    await update_account_settings(
+        clerk_id=clerk_id,
+        total_cash_deposited=request.total_cash_deposited,
+        current_cash_balance=request.current_cash_balance
+    )
+    return await get_cash_reconciliation(clerk_id)
 
 @app.get("/api/portfolio/bin", response_model=List[PortfolioResponseItem])
 async def get_bin(clerk_id: str = Depends(get_current_user)):
@@ -221,4 +281,4 @@ if __name__ == "__main__":
     import uvicorn
     # Grab the port Render assigns, or default to 8000 locally
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    uvicorn.run("main:app", host="127.0.0.1", port=port, reload=True)

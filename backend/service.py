@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 from models import (
     PortfolioItem, PortfolioResponseItem, PortfolioSummary, PortfolioHistoryPoint,
     MarketIndex, MarketWatch, User, Transaction, SectorPerformance,
-    AIAnalysisRequest, AIAnalysisResponse, CandleData, Company, MarketHistoryPoint
+    AIAnalysisRequest, AIAnalysisResponse, CandleData, Company, MarketHistoryPoint,
+    Dividend, DividendAddRequest, AccountSettings, AccountSettingsUpdateRequest, CashReconciliationResponse,
+    UserSettings, UserSettingsUpdateRequest
 )
 from fastapi import HTTPException
 import json
@@ -315,12 +317,32 @@ async def record_all_portfolios_snapshot():
 # --- Portfolio Services ---
 
 async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
-    """Returns user portfolio summary, fetching transactions from standalone collection."""
+    """Returns user portfolio summary with WABP, realized profit, and dividends calculations."""
     cursor = db.portfolio.find({"clerk_id": clerk_id, "is_deleted": {"$in": [False, None]}})
     items = await cursor.to_list(length=100)
     
+    # Fetch all dividends for this user
+    div_cursor = db.dividends.find({"clerk_id": clerk_id})
+    div_docs = await div_cursor.to_list(length=1000)
+    user_dividends = [Dividend(**d) for d in div_docs]
+    overall_dividends = sum(d.net_dividend for d in user_dividends)
+    
     if not items:
-        return PortfolioSummary(items=[], total_cost=0, total_value=0, total_profit_loss=0, total_profit_loss_percent=0)
+        # Check if user has all-time transactions for realized profit calculation
+        all_txns_cursor = db.transactions.find({"clerk_id": clerk_id})
+        all_txns = await all_txns_cursor.to_list(length=2000)
+        total_realized = sum(t.get("net_settled", 0.0) for t in all_txns)
+        total_real = total_realized + overall_dividends
+        return PortfolioSummary(
+            items=[],
+            total_cost=0,
+            total_value=0,
+            total_profit_loss=0,
+            total_profit_loss_percent=0,
+            total_realized_profit=total_realized,
+            total_dividends=overall_dividends,
+            total_real_profit=total_real
+        )
 
     # 1. Bulk Fetch Market Prices
     symbols = [item['symbol'] for item in items]
@@ -331,13 +353,55 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
     response_items = []
     total_cost = 0.0
     total_value = 0.0
+    total_realized = 0.0
+    
+    # Also fetch all transactions for user to ensure full realized profit computation
+    all_txns_cursor = db.transactions.find({"clerk_id": clerk_id})
+    all_txns_list = await all_txns_cursor.to_list(length=5000)
+    txns_by_symbol = {}
+    for t in all_txns_list:
+        sym = t.get("symbol")
+        if sym not in txns_by_symbol:
+            txns_by_symbol[sym] = []
+        txns_by_symbol[sym].append(t)
+        total_realized += t.get("net_settled", 0.0)
     
     for item in items:
-        # Get live price
-        market_data = market_map.get(item['symbol'])
+        sym = item['symbol']
+        market_data = market_map.get(sym)
         current_price = market_data['current_price'] if market_data else item['average_buy_price']
         
-        cost = item['shares'] * item['average_buy_price']
+        # Transactions for this symbol
+        transactions_raw = txns_by_symbol.get(sym, [])
+        transactions = []
+        buy_gross_sum = 0.0
+        buy_shares_sum = 0
+        symbol_realized = 0.0
+        
+        for t in transactions_raw:
+            # Migration/Fallback hydration for legacy transactions missing net_settled
+            if "net_settled" not in t or t["net_settled"] == 0.0:
+                g_amt = t.get("gross_amount") or (t.get("shares", 0) * t.get("price", 0.0))
+                b_fee = t.get("brokerage_fee", 0.0)
+                cgt = t.get("cgt_paid", 0.0)
+                act = t.get("action", "Buy")
+                n_set = -(g_amt + b_fee) if act == "Buy" else (g_amt - b_fee - cgt)
+                t["gross_amount"] = g_amt
+                t["net_settled"] = n_set
+            
+            t_obj = Transaction(**t)
+            transactions.append(t_obj)
+            
+            symbol_realized += t_obj.net_settled
+            if t_obj.action == "Buy":
+                buy_gross_sum += t_obj.gross_amount
+                buy_shares_sum += t_obj.shares
+                
+        # Calculate WABP (Weighted Average Buy Price)
+        wabp = (buy_gross_sum / buy_shares_sum) if buy_shares_sum > 0 else item['average_buy_price']
+        
+        effective_buy_price = wabp if wabp > 0 else item['average_buy_price']
+        cost = item['shares'] * effective_buy_price
         value = item['shares'] * current_price
         pl = value - cost
         pl_pct = (pl / cost * 100) if cost > 0 else 0
@@ -345,55 +409,77 @@ async def get_user_portfolio(clerk_id: str) -> PortfolioSummary:
         total_cost += cost
         total_value += value
         
-        # 2. Fetch Transactions from the separate infinite ledger
-        txn_cursor = db.transactions.find({"clerk_id": clerk_id, "symbol": item['symbol']}).sort("date", -1)
-        transactions = await txn_cursor.to_list(length=500)
+        # Calculate dividends for this symbol
+        stock_divs = sum(d.net_dividend for d in user_dividends if d.symbol == sym)
         
-        # [MIGRATION]: If no ledger txns found, check for legacy embedded ones
-        if not transactions:
-            legacy_txns = item.get("transactions", [])
-            if legacy_txns:
-                # Prepare for migration to standalone collection
-                for t in legacy_txns:
-                    t["clerk_id"] = clerk_id
-                    t["symbol"] = item['symbol']
-                    if not t.get("transaction_id"): t["transaction_id"] = str(uuid4())
-                
-                await db.transactions.insert_many(legacy_txns)
-                transactions = legacy_txns
-                # Clear legacy field to prevent re-migration
-                await db.portfolio.update_one({"_id": item["_id"]}, {"$unset": {"transactions": ""}})
-
         response_items.append(PortfolioResponseItem(
-            symbol=item['symbol'],
+            symbol=sym,
             shares=item['shares'],
             average_buy_price=item['average_buy_price'],
+            wabp=wabp,
             current_price=current_price,
             total_cost=cost,
             total_value=value,
             profit_loss=pl,
             profit_loss_percent=pl_pct,
-            transactions=[Transaction(**t) for t in transactions]
+            realized_profit=symbol_realized,
+            total_dividends=stock_divs,
+            transactions=transactions
         ))
     
     total_pl = total_value - total_cost
     total_pl_pct = (total_pl / total_cost * 100) if total_cost > 0 else 0
+    total_real = total_realized + overall_dividends
     
     return PortfolioSummary(
         items=response_items,
         total_cost=total_cost,
         total_value=total_value,
         total_profit_loss=total_pl,
-        total_profit_loss_percent=total_pl_pct
+        total_profit_loss_percent=total_pl_pct,
+        total_realized_profit=total_realized,
+        total_dividends=overall_dividends,
+        total_real_profit=total_real
     )
 
-async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares: int, price: float, reset_history: bool = False):
+async def add_or_update_holding(
+    clerk_id: str,
+    symbol: str,
+    action: str,
+    shares: int,
+    price: float,
+    brokerage_fee: Optional[float] = None,
+    cgt_paid: float = 0.0,
+    override_brokerage_fee: bool = False,
+    reset_history: bool = False
+):
     """
-    Scalable Portfolio Mutation:
-    Transactions are written to a standalone collection (infinite ledger).
-    Portfolio collection only stores current totals (no unbounded arrays).
+    Scalable Portfolio Mutation with Net Settled calculation:
+    Auto-computes brokerage commission & sales tax if not overridden.
+    Buy: net_settled = -(gross_amount + total_brokerage_cost)
+    Sell: net_settled = (gross_amount - total_brokerage_cost - cgt_paid)
     """
     symbol = symbol.upper()
+    action = "Buy" if action.lower() == "buy" else "Sell"
+    gross_amount = float(shares) * float(price)
+    
+    # Calculate or use provided brokerage fee
+    if not override_brokerage_fee or brokerage_fee is None:
+        user_settings = await get_user_settings(clerk_id)
+        if user_settings.fee_type == "Percentage":
+            base_commission = gross_amount * (user_settings.fee_value / 100.0)
+        else: # Flat_Per_Share
+            base_commission = float(shares) * user_settings.fee_value
+        sales_tax = base_commission * (user_settings.sales_tax_rate / 100.0)
+        final_brokerage_fee = base_commission + sales_tax
+    else:
+        final_brokerage_fee = float(brokerage_fee)
+    
+    if action == "Buy":
+        net_settled = -(gross_amount + final_brokerage_fee)
+    else:
+        net_settled = gross_amount - final_brokerage_fee - cgt_paid
+
     txn_id = str(uuid4())
     new_txn = Transaction(
         transaction_id=txn_id,
@@ -402,6 +488,10 @@ async def add_or_update_holding(clerk_id: str, symbol: str, action: str, shares:
         action=action,
         shares=shares,
         price=price,
+        gross_amount=gross_amount,
+        brokerage_fee=final_brokerage_fee,
+        cgt_paid=cgt_paid if action == "Sell" else 0.0,
+        net_settled=net_settled,
         date=datetime.utcnow()
     )
 
@@ -810,3 +900,123 @@ Format your response using **bolding**, bullet points, and clean paragraphs. Do 
     except Exception as e:
         print(f"OpenAI API error: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate AI analysis.")
+
+# --- Dividend Services ---
+
+async def get_user_dividends(clerk_id: str) -> List[Dividend]:
+    cursor = db.dividends.find({"clerk_id": clerk_id}).sort("date_received", -1)
+    docs = await cursor.to_list(length=1000)
+    return [Dividend(**d) for d in docs]
+
+async def add_user_dividend(clerk_id: str, symbol: str, net_dividend: float, date_received: Optional[datetime] = None) -> Dividend:
+    if not date_received:
+        date_received = datetime.utcnow()
+    dividend_id = str(uuid4())
+    dividend = Dividend(
+        dividend_id=dividend_id,
+        clerk_id=clerk_id,
+        symbol=symbol.upper(),
+        date_received=date_received,
+        net_dividend=net_dividend
+    )
+    await db.dividends.insert_one(dividend.model_dump())
+    return dividend
+
+async def delete_user_dividend(clerk_id: str, dividend_id: str) -> None:
+    res = await db.dividends.delete_one({"dividend_id": dividend_id, "clerk_id": clerk_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Dividend record not found.")
+
+# --- Account Settings & Cash Reconciliation Services ---
+
+async def get_account_settings(clerk_id: str) -> AccountSettings:
+    settings = await db.account_settings.find_one({"clerk_id": clerk_id})
+    if not settings:
+        return AccountSettings(clerk_id=clerk_id, total_cash_deposited=0.0, current_cash_balance=0.0)
+    return AccountSettings(**settings)
+
+async def update_account_settings(clerk_id: str, total_cash_deposited: float, current_cash_balance: float) -> AccountSettings:
+    now = datetime.utcnow()
+    res = await db.account_settings.find_one_and_update(
+        {"clerk_id": clerk_id},
+        {
+            "$set": {
+                "total_cash_deposited": total_cash_deposited,
+                "current_cash_balance": current_cash_balance,
+                "last_updated": now
+            }
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    return AccountSettings(**res)
+
+async def get_cash_reconciliation(clerk_id: str) -> CashReconciliationResponse:
+    settings = await get_account_settings(clerk_id)
+    
+    # 1. Sum net_settled across all transactions
+    txn_cursor = db.transactions.find({"clerk_id": clerk_id})
+    txns = await txn_cursor.to_list(length=10000)
+    total_net_settled = 0.0
+    for t in txns:
+        if "net_settled" in t and t["net_settled"] != 0.0:
+            total_net_settled += t["net_settled"]
+        else:
+            g_amt = t.get("gross_amount") or (t.get("shares", 0) * t.get("price", 0.0))
+            b_fee = t.get("brokerage_fee", 0.0)
+            cgt = t.get("cgt_paid", 0.0)
+            act = t.get("action", "Buy")
+            n_set = -(g_amt + b_fee) if act == "Buy" else (g_amt - b_fee - cgt)
+            total_net_settled += n_set
+
+    # 2. Sum net_dividend across all dividends
+    div_cursor = db.dividends.find({"clerk_id": clerk_id})
+    divs = await div_cursor.to_list(length=2000)
+    total_dividends = sum(d.get("net_dividend", 0.0) for d in divs)
+
+    # 3. Formula: Calculated Cash Balance = Total Cash Deposited + SUM(net_settled) + SUM(net_dividend)
+    calculated_cash_balance = settings.total_cash_deposited + total_net_settled + total_dividends
+    discrepancy = settings.current_cash_balance - calculated_cash_balance
+    is_reconciled = abs(discrepancy) < 0.05
+
+    return CashReconciliationResponse(
+        total_cash_deposited=settings.total_cash_deposited,
+        current_cash_balance=settings.current_cash_balance,
+        total_net_settled=total_net_settled,
+        total_dividends=total_dividends,
+        calculated_cash_balance=calculated_cash_balance,
+        discrepancy=discrepancy,
+        is_reconciled=is_reconciled
+    )
+
+# --- User Settings Services ---
+
+async def get_user_settings(clerk_id: str) -> UserSettings:
+    doc = await db.user_settings.find_one({"clerk_id": clerk_id})
+    if not doc:
+        return UserSettings(clerk_id=clerk_id)
+    return UserSettings(**doc)
+
+async def update_user_settings(
+    clerk_id: str,
+    broker_name: str,
+    fee_type: str,
+    fee_value: float,
+    sales_tax_rate: float
+) -> UserSettings:
+    now = datetime.utcnow()
+    res = await db.user_settings.find_one_and_update(
+        {"clerk_id": clerk_id},
+        {
+            "$set": {
+                "broker_name": broker_name,
+                "fee_type": fee_type,
+                "fee_value": fee_value,
+                "sales_tax_rate": sales_tax_rate,
+                "last_updated": now
+            }
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    return UserSettings(**res)
